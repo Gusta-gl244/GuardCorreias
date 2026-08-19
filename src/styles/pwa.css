@@ -1,0 +1,13 @@
+/* Bloquear pull-to-refresh */
+html {
+  overscroll-behavior-y: contain;
+}
+
+body {
+  overscroll-behavior-y: contain;
+  touch-action: manipulation;
+}
+
+#root {
+  overscroll-behavior-y: contain;
+}
