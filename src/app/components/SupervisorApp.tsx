@@ -18,6 +18,7 @@ import { Card } from './ui/card';
 import { Textarea } from './ui/textarea';
 import {
   getStore,
+  getAreas,
   addBelt,
   deleteBelt,
   addStation,
@@ -27,6 +28,7 @@ import {
   generateId,
   generateOrderId,
 } from '../data/store';
+import { settingsAPI } from '@/api/client';
 import type { Belt, BeltStation, InspectionOrder, RoleteTipo } from '../data/types';
 import { HEALTH_STATUS_COLORS, HEALTH_STATUS_LABELS } from '../data/beltStatus';
 import { STATION_TYPE_LABELS } from '../data/beltConstants';
@@ -185,13 +187,43 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
 // Correias + Estações
 // ─────────────────────────────────────────────────────────────────────────────
 
+const BELT_FORM_DEFAULTS = {
+  tag: '', name: '', area: '', lat: '', lng: '',
+  comprimento: '', largura: '', velocidade: '', capacidade: '',
+  critica: false, status: 'ativa' as Belt['status'], observation: '',
+};
+
 function BeltsPanel({ belts, stations, onRefresh }: { belts: Belt[]; stations: BeltStation[]; onRefresh: () => void }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedBelt, setSelectedBelt] = useState<Belt | null>(null);
-  const [form, setForm] = useState({ tag: '', name: '', area: '', lat: '', lng: '' });
+  const [form, setForm] = useState(BELT_FORM_DEFAULTS);
+  const [error, setError] = useState('');
+  const areas = getAreas();
+  const [tagPattern, setTagPattern] = useState({ pattern: '', example: '2101-CV-001' });
+
+  useEffect(() => {
+    settingsAPI.get('general').then((s: { tagPattern?: string; tagPatternExample?: string }) => {
+      if (s?.tagPattern) setTagPattern({ pattern: s.tagPattern, example: s.tagPatternExample || tagPattern.example });
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleCreateBelt() {
-    if (!form.tag.trim() || !form.name.trim()) return;
+    setError('');
+    if (!form.tag.trim() || !form.name.trim()) {
+      setError('Preencha ao menos TAG e nome.');
+      return;
+    }
+    if (tagPattern.pattern) {
+      try {
+        if (!new RegExp(tagPattern.pattern).test(form.tag.trim().toUpperCase())) {
+          setError(`TAG fora do padrão esperado (ex: ${tagPattern.example}).`);
+          return;
+        }
+      } catch {
+        // padrão configurado inválido — não bloqueia o cadastro por causa disso
+      }
+    }
     const lat = parseFloat(form.lat);
     const lng = parseFloat(form.lng);
     const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
@@ -200,15 +232,21 @@ function BeltsPanel({ belts, stations, onRefresh }: { belts: Belt[]; stations: B
       tag: form.tag.trim().toUpperCase(),
       name: form.name.trim(),
       area: form.area.trim() || undefined,
+      comprimento: form.comprimento ? Number(form.comprimento) : undefined,
+      largura: form.largura ? Number(form.largura) : undefined,
+      velocidade: form.velocidade ? Number(form.velocidade) : undefined,
+      capacidade: form.capacidade ? Number(form.capacidade) : undefined,
       path: hasCoords ? [{ lat, lng }, { lat: lat + 0.0015, lng: lng + 0.0015 }] : [],
       lat: hasCoords ? lat : undefined,
       lng: hasCoords ? lng : undefined,
       healthStatus: 'saudavel',
-      status: 'ativa',
+      critica: form.critica,
+      status: form.status,
+      observation: form.observation.trim() || undefined,
       createdAt: new Date().toISOString(),
     };
     addBelt(belt);
-    setForm({ tag: '', name: '', area: '', lat: '', lng: '' });
+    setForm(BELT_FORM_DEFAULTS);
     setShowForm(false);
     onRefresh();
   }
@@ -244,11 +282,18 @@ function BeltsPanel({ belts, stations, onRefresh }: { belts: Belt[]; stations: B
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-gray-600 mb-1 block">TAG *</label>
-              <Input value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} placeholder="CV2203" />
+              <Input value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} placeholder={tagPattern.example} />
             </div>
             <div>
               <label className="text-xs text-gray-600 mb-1 block">Área</label>
-              <Input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} placeholder="Britagem Primária" />
+              <select
+                value={form.area}
+                onChange={(e) => setForm({ ...form, area: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Selecione...</option>
+                {areas.map((a) => <option key={a.id} value={a.name}>{a.code} — {a.name}</option>)}
+              </select>
             </div>
           </div>
           <div>
@@ -266,6 +311,51 @@ function BeltsPanel({ belts, stations, onRefresh }: { belts: Belt[]; stations: B
             </div>
           </div>
           <p className="text-[11px] text-gray-400">Coordenadas são opcionais — sem elas a correia não aparece no mapa satélite ainda, mas pode ser usada normalmente nas inspeções.</p>
+
+          <div className="grid grid-cols-4 gap-3">
+            <div>
+              <label className="text-xs text-gray-600 mb-1 block">Comprimento (m)</label>
+              <Input type="number" value={form.comprimento} onChange={(e) => setForm({ ...form, comprimento: e.target.value })} placeholder="450" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 mb-1 block">Largura (mm)</label>
+              <Input type="number" value={form.largura} onChange={(e) => setForm({ ...form, largura: e.target.value })} placeholder="1000" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 mb-1 block">Velocidade (m/s)</label>
+              <Input type="number" value={form.velocidade} onChange={(e) => setForm({ ...form, velocidade: e.target.value })} placeholder="3.5" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 mb-1 block">Capacidade (t/h)</label>
+              <Input type="number" value={form.capacidade} onChange={(e) => setForm({ ...form, capacidade: e.target.value })} placeholder="770" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 items-end">
+            <div>
+              <label className="text-xs text-gray-600 mb-1 block">Situação operacional</label>
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value as Belt['status'] })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="ativa">Ativa</option>
+                <option value="inativa">Inativa</option>
+                <option value="manutencao">Em manutenção</option>
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-gray-600 mb-1">
+              <input type="checkbox" checked={form.critica} onChange={(e) => setForm({ ...form, critica: e.target.checked })} className="w-4 h-4 accent-[#193A2A]" />
+              Correia crítica (prioridade de inspeção)
+            </label>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-600 mb-1 block">Observações</label>
+            <Textarea value={form.observation} onChange={(e) => setForm({ ...form, observation: e.target.value })} rows={2} />
+          </div>
+
+          {error && <div className="text-xs text-red-600 bg-red-50 rounded p-2">{error}</div>}
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>Cancelar</Button>
             <Button className="flex-1 text-white" style={{ backgroundColor: '#193A2A' }} onClick={handleCreateBelt}>Criar Correia</Button>

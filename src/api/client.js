@@ -115,6 +115,34 @@ export const severitiesAPI = {
   async getAll() { return fetchAPI('/severities'); },
 };
 
+export const rolesAPI = {
+  async getAll() { return fetchAPI('/roles'); },
+  async getMine() { return fetchAPI('/roles/me'); },
+  async create(data) { return fetchAPI('/roles', { method: 'POST', body: JSON.stringify(data) }); },
+  async update(id, data) { return fetchAPI(`/roles/${id}`, { method: 'PUT', body: JSON.stringify(data) }); },
+  async delete(id) { return fetchAPI(`/roles/${id}`, { method: 'DELETE' }); },
+};
+
+export const areasAPI = {
+  async getAll() { return fetchAPI('/areas'); },
+  async create(data) { return fetchAPI('/areas', { method: 'POST', body: JSON.stringify(data) }); },
+  async update(id, data) { return fetchAPI(`/areas/${id}`, { method: 'PUT', body: JSON.stringify(data) }); },
+  async delete(id) { return fetchAPI(`/areas/${id}`, { method: 'DELETE' }); },
+};
+
+export const settingsAPI = {
+  async get(key) { return fetchAPI(`/settings/${key}`); },
+  async set(key, value) { return fetchAPI(`/settings/${key}`, { method: 'PUT', body: JSON.stringify(value) }); },
+};
+
+export const auditLogAPI = {
+  async getAll(filters = {}) {
+    const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
+    const qs = params.toString();
+    return fetchAPI(`/audit-log${qs ? `?${qs}` : ''}`);
+  },
+};
+
 export const syncAPI = {
   async checkConnection() {
     try {
@@ -129,6 +157,8 @@ export const syncAPI = {
 export default {
   authAPI,
   usersAPI,
+  rolesAPI,
+  areasAPI,
   beltsAPI,
   stationsAPI,
   checklistTemplatesAPI,
@@ -138,5 +168,7 @@ export default {
   backupsAPI,
   diagnosticsAPI,
   severitiesAPI,
+  settingsAPI,
+  auditLogAPI,
   syncAPI,
 };

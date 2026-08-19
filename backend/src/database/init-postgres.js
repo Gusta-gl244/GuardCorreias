@@ -23,11 +23,49 @@ export async function initializeDatabase() {
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
       "passwordHash" TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('tecnico', 'supervisor', 'superadm')),
+      role TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
       phone TEXT,
       avatar TEXT,
       "lastLogin" TEXT,
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL,
+      "deletedAt" TEXT
+    )
+  `);
+
+  // "role" referenciava um CHECK fixo em 3 valores — removido para dar lugar
+  // a papéis customizáveis (tabela "roles" abaixo). A validação de que o
+  // valor corresponde a um papel existente passa a ser feita na rota, não
+  // mais pelo banco (mesmo padrão já usado para a tag de correia).
+  await runSQL(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
+
+  // ── Papéis e permissões ─────────────────────────────────────────────────
+  // "baseShell" decide qual casca de UI o papel usa (TecnicoApp/SupervisorApp/
+  // SuperAdmApp) — desacopla "nome do papel" de "qual tela renderiza", então
+  // um papel customizado (ex.: "Auditor") pode existir sem precisar de uma
+  // tela própria, herdando a casca que fizer mais sentido.
+  // "permissions" é { modulo: { view, create, edit, delete } }.
+  await runSQL(`
+    CREATE TABLE IF NOT EXISTS roles (
+      id TEXT PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL,
+      label TEXT NOT NULL,
+      "baseShell" TEXT NOT NULL CHECK("baseShell" IN ('tecnico', 'supervisor', 'superadm')),
+      "isSystem" BOOLEAN NOT NULL DEFAULT FALSE,
+      permissions JSONB NOT NULL DEFAULT '{}',
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL,
+      "deletedAt" TEXT
+    )
+  `);
+
+  // ── Catálogo de áreas da planta (ex.: 2101 Britagem Primária) ───────────
+  await runSQL(`
+    CREATE TABLE IF NOT EXISTS areas (
+      id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
       "createdAt" TEXT NOT NULL,
       "updatedAt" TEXT NOT NULL,
       "deletedAt" TEXT
@@ -240,6 +278,7 @@ export async function initializeDatabase() {
   await runSQL(`CREATE INDEX IF NOT EXISTS idx_inspections_updated ON inspections ("updatedAt")`);
   await runSQL(`CREATE INDEX IF NOT EXISTS idx_users_updated ON users ("updatedAt")`);
   await runSQL(`CREATE INDEX IF NOT EXISTS idx_media_inspection ON media ("inspectionId")`);
+  await runSQL(`CREATE INDEX IF NOT EXISTS idx_areas_updated ON areas ("updatedAt")`);
 
   console.log('✅ Todas as tabelas criadas/verificadas com sucesso!');
 }

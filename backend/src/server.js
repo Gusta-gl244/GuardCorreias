@@ -5,12 +5,14 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { initDb, closeDb } from './database/postgres-connection.js';
 import { initializeDatabase } from './database/init-postgres.js';
-import { seedTestAccountsIfEmpty, seedDefaultsIfEmpty } from './database/seed.js';
+import { seedTestAccountsIfEmpty, seedDefaultsIfEmpty, seedRolesIfEmpty, seedAreasIfEmpty } from './database/seed.js';
 import { initBackupScheduler } from './scheduler/backupScheduler.js';
 import { requireAuth } from './middleware/auth.js';
 
 import authRouter from './routes/auth.js';
 import usersRouter from './routes/users.js';
+import rolesRouter from './routes/roles.js';
+import areasRouter from './routes/areas.js';
 import beltsRouter from './routes/belts.js';
 import stationsRouter from './routes/stations.js';
 import checklistTemplatesRouter from './routes/checklistTemplates.js';
@@ -21,6 +23,8 @@ import mediaRouter from './routes/media.js';
 import syncRouter from './routes/sync.js';
 import backupsRouter from './routes/backups.js';
 import diagnosticsRouter from './routes/diagnostics.js';
+import settingsRouter from './routes/settings.js';
+import auditLogRouter from './routes/auditLog.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -65,6 +69,8 @@ app.get('/api/health', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.use('/api/users', requireAuth, usersRouter);
+app.use('/api/roles', requireAuth, rolesRouter);
+app.use('/api/areas', requireAuth, areasRouter);
 app.use('/api/belts', requireAuth, beltsRouter);
 app.use('/api/stations', requireAuth, stationsRouter);
 app.use('/api/checklist-templates', requireAuth, checklistTemplatesRouter);
@@ -75,6 +81,8 @@ app.use('/api/media', requireAuth, mediaRouter);
 app.use('/api/sync', requireAuth, syncRouter);
 app.use('/api/backups', requireAuth, backupsRouter);
 app.use('/api/diagnostics', requireAuth, diagnosticsRouter);
+app.use('/api/settings', requireAuth, settingsRouter);
+app.use('/api/audit-log', requireAuth, auditLogRouter);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SPA FALLBACK
@@ -103,8 +111,10 @@ async function startServer() {
     console.log('🔧 Inicializando banco de dados PostgreSQL...');
     await initDb();
     await initializeDatabase();
+    await seedRolesIfEmpty();
     await seedTestAccountsIfEmpty();
     await seedDefaultsIfEmpty();
+    await seedAreasIfEmpty();
     await initBackupScheduler();
     console.log('✅ Banco de dados inicializado com sucesso!');
 

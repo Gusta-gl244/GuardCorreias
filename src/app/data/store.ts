@@ -1,6 +1,7 @@
 import type {
   AppData,
   SystemUser,
+  Area,
   Belt,
   BeltStation,
   ChecklistTemplate,
@@ -29,6 +30,7 @@ export function getStore(): AppData {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as AppData;
+      if (!parsed.areas) parsed.areas = [];
       if (!parsed.belts) parsed.belts = [];
       if (!parsed.beltStations) parsed.beltStations = [];
       if (!parsed.checklistTemplates) parsed.checklistTemplates = [];
@@ -77,6 +79,7 @@ export function getInitialData(): AppData {
   // estações ficam vazias até a importação dos dados reais da planta.
   return {
     users: [],
+    areas: [],
     belts: [],
     beltStations: [],
     checklistTemplates: [],
@@ -262,6 +265,61 @@ export function addSeverity(sev: SeverityOption): void {
   store.severities.push(sev);
   saveStore(store);
   enqueueMutation('severities', 'create', sev.id, sev);
+}
+export function updateSeverity(updated: SeverityOption): void {
+  const store = getStore();
+  const idx = store.severities.findIndex((s) => s.id === updated.id);
+  if (idx >= 0) store.severities[idx] = updated;
+  saveStore(store);
+  enqueueMutation('severities', 'update', updated.id, updated);
+}
+export function deleteSeverity(id: string): void {
+  const store = getStore();
+  store.severities = store.severities.filter((s) => s.id !== id);
+  saveStore(store);
+  enqueueMutation('severities', 'delete', id);
+}
+
+// ─── Áreas ───────────────────────────────────────────────────────────────────
+// CRUD passa pela API dedicada (não pelo outbox genérico) — mesmo padrão de
+// "users": catálogo administrado no Admin, não dado criado em campo.
+
+export function getAreas(): Area[] {
+  return getStore().areas;
+}
+export async function addArea(area: { code: string; name: string }): Promise<Area> {
+  const res = await fetch(`${API_URL}/areas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(area),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || 'Falha ao criar área');
+  const created = await res.json();
+  const store = getStore();
+  store.areas.push(created);
+  saveStore(store);
+  return created;
+}
+export async function updateArea(id: string, area: { code: string; name: string }): Promise<Area> {
+  const res = await fetch(`${API_URL}/areas/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(area),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || 'Falha ao atualizar área');
+  const saved = await res.json();
+  const store = getStore();
+  const idx = store.areas.findIndex((a) => a.id === id);
+  if (idx >= 0) store.areas[idx] = saved;
+  saveStore(store);
+  return saved;
+}
+export async function deleteArea(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/areas/${id}`, { method: 'DELETE', headers: authHeaders() });
+  if (!res.ok && res.status !== 204) throw new Error('Falha ao excluir área');
+  const store = getStore();
+  store.areas = store.areas.filter((a) => a.id !== id);
+  saveStore(store);
 }
 
 // ─── Ordens de Inspeção (demandas) ─────────────────────────────────────────

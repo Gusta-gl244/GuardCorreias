@@ -7,6 +7,12 @@ import {
   Database,
   Activity,
   Trash2,
+  ShieldCheck,
+  MapPinned,
+  ClipboardList,
+  AlertTriangle,
+  Settings as SettingsIcon,
+  History,
 } from 'lucide-react';
 import guardCorreiasIcon from '../../assets/brand/guardcorreias-logo.png';
 import grupoLogo from '../../assets/brand/grupo-mvv-bnmc.png';
@@ -14,9 +20,16 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { BackupPanel } from './BackupPanel';
+import { RolesPanel } from './admin/RolesPanel';
+import { AreasPanel } from './admin/AreasPanel';
+import { ChecklistsPanel } from './admin/ChecklistsPanel';
+import { SeveritiesPanel } from './admin/SeveritiesPanel';
+import { SettingsPanel } from './admin/SettingsPanel';
+import { AuditLogPanel } from './admin/AuditLogPanel';
 import { getStore, addUser, deleteUser } from '../data/store';
 import * as api from '@/api/client';
-import type { SystemUser, UserRole } from '../data/types';
+import { rolesAPI } from '@/api/client';
+import type { SystemUser, Role } from '../data/types';
 import { forceSync, useDataSync } from '@/hooks/useDataSync';
 import type { User } from '../App';
 
@@ -25,7 +38,19 @@ interface SuperAdmAppProps {
   onLogout: () => void;
 }
 
-type Tab = 'usuarios' | 'backup' | 'status';
+type Tab = 'usuarios' | 'papeis' | 'areas' | 'checklists' | 'severidades' | 'configuracoes' | 'auditoria' | 'backup' | 'status';
+
+const NAV: { id: Tab; label: string; icon: typeof UsersIcon }[] = [
+  { id: 'usuarios', label: 'Usuários', icon: UsersIcon },
+  { id: 'papeis', label: 'Papéis & Permissões', icon: ShieldCheck },
+  { id: 'areas', label: 'Áreas', icon: MapPinned },
+  { id: 'checklists', label: 'Checklists', icon: ClipboardList },
+  { id: 'severidades', label: 'Severidades', icon: AlertTriangle },
+  { id: 'configuracoes', label: 'Configurações', icon: SettingsIcon },
+  { id: 'auditoria', label: 'Auditoria', icon: History },
+  { id: 'backup', label: 'Backup', icon: Database },
+  { id: 'status', label: 'Status', icon: Activity },
+];
 
 export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
   const [activeTab, setActiveTab] = useState<Tab>('usuarios');
@@ -69,44 +94,71 @@ export function SuperAdmApp({ user, onLogout }: SuperAdmAppProps) {
             <LogOut className="w-4 h-4" />
           </Button>
         </div>
-        <div className="flex px-4 gap-1 pb-2">
-          {([
-            { id: 'usuarios', label: 'Usuários', icon: UsersIcon },
-            { id: 'backup', label: 'Backup', icon: Database },
-            { id: 'status', label: 'Status', icon: Activity },
-          ] as const).map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
+      </div>
+
+      <div className="flex flex-1 min-h-0">
+        <nav className="w-52 shrink-0 border-r border-gray-200 bg-white p-2 hidden md:block">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            const active = activeTab === item.id;
             return (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors"
-                style={{ backgroundColor: active ? 'rgba(170,137,51,0.25)' : 'transparent', color: active ? '#AA8933' : 'rgba(255,255,255,0.7)' }}
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className="w-full flex items-center gap-2 text-xs px-3 py-2 rounded-lg transition-colors mb-0.5 text-left"
+                style={{
+                  backgroundColor: active ? 'rgba(170,137,51,0.12)' : 'transparent',
+                  color: active ? '#AA8933' : '#193A2A',
+                }}
+              >
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Navegação em abas horizontais roláveis no mobile, onde a coluna lateral vira oculta */}
+        <div className="md:hidden flex gap-1 px-3 py-2 overflow-x-auto border-b border-gray-200 bg-white">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            const active = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors shrink-0"
+                style={{ backgroundColor: active ? 'rgba(170,137,51,0.12)' : 'transparent', color: active ? '#AA8933' : '#193A2A' }}
               >
                 <Icon className="w-3.5 h-3.5" />
-                {tab.label}
+                {item.label}
               </button>
             );
           })}
         </div>
-      </div>
 
-      <div className="flex-1 p-4">
-        {activeTab === 'usuarios' && <UsersPanel users={users} onRefresh={refresh} />}
-        {activeTab === 'backup' && (
-          <div className="max-w-3xl mx-auto">
-            <Card className="p-6 text-center">
-              <Database className="w-10 h-10 mx-auto mb-3" style={{ color: '#193A2A' }} />
-              <p className="text-sm text-gray-600 mb-4">Backups completos, exportações e agendamento automático.</p>
-              <Button className="text-white" style={{ backgroundColor: '#193A2A' }} onClick={() => setShowBackup(true)}>
-                Abrir Centro de Backup
-              </Button>
-            </Card>
-            {showBackup && <BackupPanel onClose={() => setShowBackup(false)} />}
-          </div>
-        )}
-        {activeTab === 'status' && <StatusPanel />}
+        <div className="flex-1 p-4 overflow-y-auto">
+          {activeTab === 'usuarios' && <UsersPanel users={users} onRefresh={refresh} />}
+          {activeTab === 'papeis' && <RolesPanel />}
+          {activeTab === 'areas' && <AreasPanel />}
+          {activeTab === 'checklists' && <ChecklistsPanel />}
+          {activeTab === 'severidades' && <SeveritiesPanel />}
+          {activeTab === 'configuracoes' && <SettingsPanel />}
+          {activeTab === 'auditoria' && <AuditLogPanel />}
+          {activeTab === 'backup' && (
+            <div className="max-w-3xl mx-auto">
+              <Card className="p-6 text-center">
+                <Database className="w-10 h-10 mx-auto mb-3" style={{ color: '#193A2A' }} />
+                <p className="text-sm text-gray-600 mb-4">Backups completos, exportações e agendamento automático.</p>
+                <Button className="text-white" style={{ backgroundColor: '#193A2A' }} onClick={() => setShowBackup(true)}>
+                  Abrir Centro de Backup
+                </Button>
+              </Card>
+              {showBackup && <BackupPanel onClose={() => setShowBackup(false)} />}
+            </div>
+          )}
+          {activeTab === 'status' && <StatusPanel />}
+        </div>
       </div>
     </div>
   );
@@ -120,7 +172,18 @@ function UsersPanel({ users, onRefresh }: { users: SystemUser[]; onRefresh: () =
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'tecnico' as UserRole });
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'tecnico' });
+
+  useEffect(() => {
+    rolesAPI.getAll().then((list: Role[]) => {
+      setRoles(list);
+      if (list.length > 0 && !list.some((r) => r.name === form.role)) {
+        setForm((f) => ({ ...f, role: list[0].name }));
+      }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleCreate() {
     setError('');
@@ -134,12 +197,12 @@ function UsersPanel({ users, onRefresh }: { users: SystemUser[]; onRefresh: () =
         id: '',
         name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
-        role: form.role as 'tecnico' | 'supervisor' | 'superadm',
+        role: form.role,
         status: 'active',
         lastLogin: '',
         password: form.password,
       });
-      setForm({ name: '', email: '', password: '', role: 'tecnico' });
+      setForm({ name: '', email: '', password: '', role: roles[0]?.name || 'tecnico' });
       setShowForm(false);
       onRefresh();
     } catch (err) {
@@ -159,7 +222,7 @@ function UsersPanel({ users, onRefresh }: { users: SystemUser[]; onRefresh: () =
     }
   }
 
-  const roleLabels: Record<string, string> = { tecnico: 'Técnico', supervisor: 'Supervisor', superadm: 'Administrador' };
+  const roleLabels: Record<string, string> = Object.fromEntries(roles.map((r) => [r.name, r.label]));
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
@@ -189,10 +252,8 @@ function UsersPanel({ users, onRefresh }: { users: SystemUser[]; onRefresh: () =
             </div>
             <div>
               <label className="text-xs text-gray-600 mb-1 block">Perfil</label>
-              <select value={form.role ?? 'tecnico'} onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                <option value="tecnico">Técnico</option>
-                <option value="supervisor">Supervisor</option>
-                <option value="superadm">Administrador</option>
+              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                {roles.map((r) => <option key={r.id} value={r.name}>{r.label}</option>)}
               </select>
             </div>
           </div>

@@ -44,6 +44,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         name: sysUser.name,
         email: sysUser.email,
         role: sysUser.role,
+        baseShell: sysUser.baseShell ?? 'tecnico',
         avatar: sysUser.avatar,
       });
     } else {

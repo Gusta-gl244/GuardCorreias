@@ -20,6 +20,7 @@ const TABLES = {
   inspectionOrders: { pk: 'id', quoted: '"inspectionOrders"' },
   inspections: { pk: 'id' },
   media: { pk: 'id' },
+  areas: { pk: 'id' },
 };
 
 function tableName(entity) {
@@ -158,6 +159,92 @@ export async function updateUser(id, data) {
 
 export async function deleteUser(id) {
   return softDelete('users', id);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ROLES (papéis e matriz de permissões)
+//
+// CRUD explícito (não upsertLWW): papéis são um catálogo administrado pelo
+// admin, não um dado criado em campo pelo técnico/supervisor — mesmo
+// raciocínio já usado para "users".
+// ═════════════════════════════════════════════════════════════════════════════
+
+export async function getAllRoles() {
+  return getQuery('SELECT * FROM roles WHERE "deletedAt" IS NULL ORDER BY "createdAt" ASC');
+}
+
+export async function getRoleByName(name) {
+  return getQueryOne('SELECT * FROM roles WHERE name = $1 AND "deletedAt" IS NULL', [name]);
+}
+
+export async function getRoleById(id) {
+  return getQueryOne('SELECT * FROM roles WHERE id = $1 AND "deletedAt" IS NULL', [id]);
+}
+
+export async function createRole(data) {
+  const id = data.id || uuidv4();
+  const now = new Date().toISOString();
+  await runSQL(
+    `INSERT INTO roles (id, name, label, "baseShell", "isSystem", permissions, "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
+    [id, data.name, data.label, data.baseShell, !!data.isSystem, JSON.stringify(data.permissions || {}), now]
+  );
+  return getRoleById(id);
+}
+
+export async function updateRole(id, data) {
+  const fields = [];
+  const params = [];
+  let i = 1;
+  if (data.label !== undefined) { fields.push(`label = $${i}`); params.push(data.label); i++; }
+  if (data.baseShell !== undefined) { fields.push(`"baseShell" = $${i}`); params.push(data.baseShell); i++; }
+  if (data.permissions !== undefined) { fields.push(`permissions = $${i}`); params.push(JSON.stringify(data.permissions)); i++; }
+  fields.push(`"updatedAt" = $${i}`); params.push(new Date().toISOString()); i++;
+  params.push(id);
+  await runSQL(`UPDATE roles SET ${fields.join(', ')} WHERE id = $${i}`, params);
+  return getRoleById(id);
+}
+
+export async function deleteRole(id) {
+  return softDelete('roles', id);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AREAS (catálogo de áreas da planta)
+// ═════════════════════════════════════════════════════════════════════════════
+
+export async function getAllAreas() {
+  return getQuery('SELECT * FROM areas WHERE "deletedAt" IS NULL ORDER BY code ASC');
+}
+
+export async function getAreaById(id) {
+  return getQueryOne('SELECT * FROM areas WHERE id = $1 AND "deletedAt" IS NULL', [id]);
+}
+
+export async function createArea(data) {
+  const id = data.id || uuidv4();
+  const now = new Date().toISOString();
+  await runSQL(
+    `INSERT INTO areas (id, code, name, "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $4)`,
+    [id, data.code, data.name, now]
+  );
+  return getAreaById(id);
+}
+
+export async function updateArea(id, data) {
+  const fields = [];
+  const params = [];
+  let i = 1;
+  if (data.code !== undefined) { fields.push(`code = $${i}`); params.push(data.code); i++; }
+  if (data.name !== undefined) { fields.push(`name = $${i}`); params.push(data.name); i++; }
+  fields.push(`"updatedAt" = $${i}`); params.push(new Date().toISOString()); i++;
+  params.push(id);
+  await runSQL(`UPDATE areas SET ${fields.join(', ')} WHERE id = $${i}`, params);
+  return getAreaById(id);
+}
+
+export async function deleteArea(id) {
+  return softDelete('areas', id);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -428,4 +515,36 @@ export async function addSystemLog(entry) {
 
 export async function getRecentSystemLogs(limit = 200) {
   return getQuery('SELECT * FROM "systemLogs" ORDER BY timestamp DESC LIMIT $1', [limit]);
+}
+
+export async function getFilteredSystemLogs({ module, level, userId, since, until, limit = 200 } = {}) {
+  const clauses = [];
+  const params = [];
+  let i = 1;
+  if (module) { clauses.push(`module = $${i}`); params.push(module); i++; }
+  if (level) { clauses.push(`level = $${i}`); params.push(level); i++; }
+  if (userId) { clauses.push(`"userId" = $${i}`); params.push(userId); i++; }
+  if (since) { clauses.push(`timestamp >= $${i}`); params.push(since); i++; }
+  if (until) { clauses.push(`timestamp <= $${i}`); params.push(until); i++; }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  params.push(limit);
+  return getQuery(`SELECT * FROM "systemLogs" ${where} ORDER BY timestamp DESC LIMIT $${i}`, params);
+}
+
+/**
+ * Registra uma entrada de auditoria a partir do usuário autenticado da
+ * requisição (req.user, vindo do JWT). Chamado depois de mutações
+ * administrativas (correias, estações, checklists, severidades, usuários,
+ * papéis, áreas, configurações) — de propósito, NÃO chamado em toda
+ * atualização de inspeção/mídia em campo, que geraria ruído demais para o
+ * log ser útil de ler.
+ */
+export async function logSystemEvent(module, level, message, reqUser) {
+  return addSystemLog({
+    module,
+    level,
+    message,
+    userId: reqUser?.sub,
+    userName: reqUser?.name,
+  });
 }

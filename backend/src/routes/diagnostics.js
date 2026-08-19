@@ -6,7 +6,7 @@ import { requireRole } from '../middleware/auth.js';
 const router = express.Router();
 
 const TABLES = {
-  users: 'users', belts: 'belts', beltStations: '"beltStations"',
+  users: 'users', roles: 'roles', areas: 'areas', belts: 'belts', beltStations: '"beltStations"',
   checklistTemplates: '"checklistTemplates"', severities: 'severities',
   inspectionOrders: '"inspectionOrders"', inspections: 'inspections',
   media: 'media', backups: 'backups',

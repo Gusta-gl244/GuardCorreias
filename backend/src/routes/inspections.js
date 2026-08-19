@@ -2,11 +2,12 @@ import express from 'express';
 import archiver from 'archiver';
 import { PassThrough } from 'stream';
 import * as queries from '../database/queries-postgres.js';
+import { requirePermission } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // GET /api/inspections - Obter todas as inspeções
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('inspections', 'view'), async (req, res) => {
   try {
     res.json(await queries.getAllInspections());
   } catch (error) {
@@ -16,7 +17,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/inspections/:id - Obter inspeção por ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', requirePermission('inspections', 'view'), async (req, res) => {
   try {
     const inspection = await queries.getInspectionById(req.params.id);
     if (!inspection) return res.status(404).json({ error: 'Inspeção não encontrada' });
@@ -28,7 +29,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // GET /api/inspections/:id/media - Mídias vinculadas a esta inspeção (a "pasta" lógica)
-router.get('/:id/media', async (req, res) => {
+router.get('/:id/media', requirePermission('inspections', 'view'), async (req, res) => {
   try {
     const media = await queries.getMediaByInspection(req.params.id);
     res.json(media.map(({ dataBase64, ...meta }) => meta)); // lista leve, sem o base64
@@ -42,7 +43,7 @@ router.get('/:id/media', async (req, res) => {
 // fotos/videos/audios/checklist.json/metadados.json, tudo dentro de uma
 // pasta única com o ID da inspeção — materializada aqui, na hora do
 // download, já que não há disco persistente em produção.
-router.get('/:id/export', async (req, res) => {
+router.get('/:id/export', requirePermission('inspections', 'view'), async (req, res) => {
   try {
     const inspection = await queries.getInspectionById(req.params.id);
     if (!inspection) return res.status(404).json({ error: 'Inspeção não encontrada' });
@@ -98,7 +99,7 @@ router.get('/:id/export', async (req, res) => {
 // automaticamente quando o cliente não envia um id — o app offline sempre
 // envia, gerado localmente com o mesmo formato, para o ID já existir mesmo
 // sem rede)
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('inspections', 'create'), async (req, res) => {
   try {
     const inspection = await queries.createInspection(req.body);
     res.status(201).json(inspection);
@@ -109,7 +110,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/inspections/:id - Atualizar inspeção
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('inspections', 'edit'), async (req, res) => {
   try {
     const inspection = await queries.updateInspection(req.params.id, req.body);
     if (!inspection) return res.status(404).json({ error: 'Inspeção não encontrada' });
@@ -121,7 +122,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE /api/inspections/:id
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('inspections', 'delete'), async (req, res) => {
   try {
     await queries.deleteInspection(req.params.id);
     res.status(204).send();

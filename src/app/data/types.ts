@@ -1,10 +1,19 @@
-export type UserRole = 'tecnico' | 'supervisor' | 'superadm' | null;
+// As 3 cascas de UI que o app sabe renderizar (TecnicoApp/SupervisorApp/
+// SuperAdmApp). Um papel customizado (criado no Admin) sempre aponta para
+// uma destas 3 — é o que decide qual tela ele usa, independente do nome do
+// papel em si.
+export type BaseShell = 'tecnico' | 'supervisor' | 'superadm';
+
+// Nome do papel: os 3 nomes do sistema continuam existindo, mas agora é
+// texto livre — um admin pode criar papéis customizados (ex.: "auditor").
+export type UserRole = string | null;
 
 export interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
+  baseShell: BaseShell;
   avatar?: string;
 }
 
@@ -15,11 +24,48 @@ export interface SystemUser {
   email: string;
   // Sem campo de senha aqui de propósito: a senha nunca existe em texto
   // puro no frontend, só como hash no servidor.
-  role: 'tecnico' | 'supervisor' | 'superadm';
+  role: string;
   status: 'active' | 'inactive';
   lastLogin: string;
   avatar?: string;
   phone?: string;
+  createdAt?: string;
+  // Só vem preenchido na resposta de login (ver POST /api/auth/login) — uma
+  // linha de "users" pura, vinda de GET /api/users, não sabe sua própria
+  // casca de UI sem consultar a tabela "roles".
+  baseShell?: BaseShell;
+}
+
+// ─── PAPÉIS E PERMISSÕES ───────────────────────────────────────────────────────
+export interface ModulePermissions {
+  view: boolean;
+  create: boolean;
+  edit: boolean;
+  delete: boolean;
+}
+
+export type PermissionModule =
+  | 'users' | 'roles' | 'areas' | 'belts' | 'stations'
+  | 'checklistTemplates' | 'severities' | 'inspectionOrders'
+  | 'inspections' | 'media' | 'settings' | 'auditLog' | 'backups';
+
+export type PermissionMatrix = Partial<Record<PermissionModule, ModulePermissions>>;
+
+export interface Role {
+  id: string;
+  name: string;
+  label: string;
+  baseShell: BaseShell;
+  isSystem: boolean;
+  permissions: PermissionMatrix;
+  createdAt?: string;
+}
+
+// ─── ÁREAS DA PLANTA ────────────────────────────────────────────────────────────
+export interface Area {
+  id: string;
+  code: string;
+  name: string;
   createdAt?: string;
 }
 
@@ -241,6 +287,7 @@ export interface SystemLog {
 // ─── ESTADO GLOBAL DO SISTEMA ───────────────────────────────────────────────────
 export interface AppData {
   users: SystemUser[];
+  areas: Area[];
   belts: Belt[];
   beltStations: BeltStation[];
   checklistTemplates: ChecklistTemplate[];

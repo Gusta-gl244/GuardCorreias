@@ -1,10 +1,11 @@
 import express from 'express';
 import * as queries from '../database/queries-postgres.js';
+import { requirePermission } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // GET /api/severities
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('severities', 'view'), async (req, res) => {
   try {
     res.json(await queries.getAllSeverities());
   } catch (error) {
@@ -14,9 +15,10 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/severities
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('severities', 'create'), async (req, res) => {
   try {
     const sev = await queries.createSeverity(req.body);
+    await queries.logSystemEvent('Severidades', 'info', `Severidade criada: ${sev.label}`, req.user);
     res.status(201).json(sev);
   } catch (error) {
     console.error('❌ Erro ao criar severidade:', error.message);

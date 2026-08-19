@@ -1,10 +1,11 @@
 import express from 'express';
 import * as queries from '../database/queries-postgres.js';
+import { requirePermission } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // GET /api/checklist-templates
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('checklistTemplates', 'view'), async (req, res) => {
   try {
     res.json(await queries.getAllChecklistTemplates());
   } catch (error) {
@@ -14,7 +15,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/checklist-templates/:id
-router.get('/:id', async (req, res) => {
+router.get('/:id', requirePermission('checklistTemplates', 'view'), async (req, res) => {
   try {
     const tpl = await queries.getChecklistTemplateById(req.params.id);
     if (!tpl) return res.status(404).json({ error: 'Checklist não encontrado' });
@@ -26,9 +27,10 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/checklist-templates
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('checklistTemplates', 'create'), async (req, res) => {
   try {
     const tpl = await queries.createChecklistTemplate(req.body);
+    await queries.logSystemEvent('Checklists', 'info', `Checklist criado: ${tpl.name}`, req.user);
     res.status(201).json(tpl);
   } catch (error) {
     console.error('❌ Erro ao criar checklist:', error.message);
@@ -37,7 +39,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/checklist-templates/:id
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('checklistTemplates', 'edit'), async (req, res) => {
   try {
     const tpl = await queries.updateChecklistTemplate(req.params.id, req.body);
     if (!tpl) return res.status(404).json({ error: 'Checklist não encontrado' });
@@ -49,9 +51,11 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE /api/checklist-templates/:id
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('checklistTemplates', 'delete'), async (req, res) => {
   try {
+    const tpl = await queries.getChecklistTemplateById(req.params.id);
     await queries.deleteChecklistTemplate(req.params.id);
+    await queries.logSystemEvent('Checklists', 'warning', `Checklist excluído: ${tpl?.name || req.params.id}`, req.user);
     res.status(204).send();
   } catch (error) {
     console.error('❌ Erro ao excluir checklist:', error.message);

@@ -17,6 +17,10 @@ const ENTITY_TO_COLLECTION: Record<string, string> = {
   inspectionOrders: 'inspectionOrders',
   inspections: 'inspections',
   media: 'media',
+  // "areas" só é puxado (pull), nunca empurrado por aqui — mutações vão
+  // pelas rotas dedicadas /api/areas (ver areasAPI em src/api/client.js),
+  // mesmo motivo de "users" não ir pelo outbox genérico.
+  areas: 'areas',
 };
 const COLLECTION_TO_ENTITY: Record<string, string> = Object.fromEntries(
   Object.entries(ENTITY_TO_COLLECTION).map(([entity, collection]) => [collection, entity])

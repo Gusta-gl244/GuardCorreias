@@ -1,10 +1,11 @@
 import express from 'express';
 import * as queries from '../database/queries-postgres.js';
+import { requirePermission } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // GET /api/inspection-orders - Obter todas as ordens de inspeção
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('inspectionOrders', 'view'), async (req, res) => {
   try {
     res.json(await queries.getAllInspectionOrders());
   } catch (error) {
@@ -14,7 +15,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/inspection-orders/:id
-router.get('/:id', async (req, res) => {
+router.get('/:id', requirePermission('inspectionOrders', 'view'), async (req, res) => {
   try {
     const order = await queries.getInspectionOrderById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Ordem não encontrada' });
@@ -26,7 +27,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/inspection-orders
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('inspectionOrders', 'create'), async (req, res) => {
   try {
     const order = await queries.createInspectionOrder(req.body);
     res.status(201).json(order);
@@ -37,7 +38,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/inspection-orders/:id
-router.put('/:id', async (req, res) => {
+router.put('/:id', requirePermission('inspectionOrders', 'edit'), async (req, res) => {
   try {
     const order = await queries.updateInspectionOrder(req.params.id, req.body);
     if (!order) return res.status(404).json({ error: 'Ordem não encontrada' });
@@ -49,7 +50,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE /api/inspection-orders/:id
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requirePermission('inspectionOrders', 'delete'), async (req, res) => {
   try {
     await queries.deleteInspectionOrder(req.params.id);
     res.status(204).send();

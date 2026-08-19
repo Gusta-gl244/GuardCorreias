@@ -6,14 +6,19 @@ import { SuperAdmApp } from './components/SuperAdmApp';
 import { loadFromBackend } from './data/store';
 import { initUpdateCheck } from '@/utils/checkForUpdates';
 import { usePeriodSync } from '@/hooks/usePeriodSync';
+import type { UserRole, BaseShell } from './data/types';
 
-export type UserRole = 'tecnico' | 'supervisor' | 'superadm' | null;
+export type { UserRole };
 
 export interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
+  // Decide qual das 3 cascas de UI renderizar — independe do nome do papel
+  // (que agora pode ser customizado no Admin). Ver Role.baseShell em
+  // data/types.ts.
+  baseShell: BaseShell;
   avatar?: string;
 }
 
@@ -73,7 +78,7 @@ export default function App() {
   if (!user) return <LoginScreen onLogin={handleLogin} />;
 
   function AppContent() {
-    switch (user.role) {
+    switch (user.baseShell) {
       case 'tecnico':   return <TecnicoApp user={user} onLogout={handleLogout} />;
       case 'supervisor': return <SupervisorApp user={user} onLogout={handleLogout} />;
       case 'superadm':  return <SuperAdmApp user={user} onLogout={handleLogout} />;

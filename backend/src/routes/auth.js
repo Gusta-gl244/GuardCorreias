@@ -24,7 +24,8 @@ router.post('/login', async (req, res) => {
     }
 
     await queries.updateUser(user.id, { lastLogin: new Date().toISOString() });
-    const token = signToken(user);
+    const token = await signToken(user);
+    const role = await queries.getRoleByName(user.role);
 
     res.json({
       token,
@@ -33,6 +34,7 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        baseShell: role?.baseShell || user.role,
         avatar: user.avatar,
       },
     });
