@@ -113,22 +113,37 @@ roletes no lugar de torres/estruturas.
 - **Ícones da GuardCorreias**: gerados automaticamente a partir do logo
   (`Referencias/Designer__4_-removebg-preview.png`) via script local — dá
   pra trocar por uma exportação oficial do designer depois, se houver uma.
-- **Deploy real no Render + Neon** — nunca testado deployado (`render.yaml`
-  já configurado, sem disco persistente).
+- **Deploy real no Render** — falta só publicar. O banco Neon já foi
+  validado (ver seção "Neon" abaixo): schema criado, 3 contas de teste +
+  severidades + checklist padrão já semeados lá. `render.yaml` já
+  configurado (sem disco persistente). Falta: criar o serviço web no
+  Render apontando pro repo do GitHub, colar a `DATABASE_URL` do Neon como
+  variável de ambiente (`sync: false` no `render.yaml`, então precisa ser
+  colada manualmente no painel do Render), e o `JWT_SECRET` já é
+  gerado automaticamente pelo Render (`generateValue: true`).
 
-## ⚠️ Bloqueio: git não encontrado nesta máquina
+## ✅ Git e GitHub
 
-Não consegui rodar `git` (não está no PATH nem em `C:\Program Files\Git`) —
-então **o repositório em `C:\GuardCorreias` ainda não foi inicializado**.
-Antes do deploy no Render, alguém precisa, na própria máquina:
+Repositório inicializado e publicado em
+`git@github.com:Gusta-gl244/GuardCorreias.git` (branch `main`). O `git` desta
+máquina não está no PATH do PowerShell, mas existe em
+`C:\Users\gustavo.santos\AppData\Local\Programs\Git\cmd\git.exe` — adicionar
+essa pasta ao PATH (ou sempre invocar o executável por esse caminho
+completo) resolve em sessões futuras.
 
-```powershell
-cd C:\GuardCorreias
-git init
-git add .
-git commit -m "GuardCorreias — versão inicial"
-# depois: criar repo no GitHub e git push
-```
+## ✅ Neon (banco de produção) — validado
+
+`DATABASE_URL` de produção testada de ponta a ponta: o backend conectou,
+criou o schema inteiro e semeou as 3 contas de teste + severidades +
+checklist padrão **diretamente no Neon** (não é mais só o Postgres local
+embutido). Login e leitura das rotas confirmados. Nenhuma correia/estação/
+ordem de teste foi criada lá — o cadastro de ativos no Neon está limpo,
+esperando os dados reais.
+
+**Falta só**: colar essa mesma `DATABASE_URL` como variável de ambiente do
+serviço web no painel do Render (o `render.yaml` já espera essa var com
+`sync: false`, ou seja, precisa ser colada manualmente lá, nunca commitada
+no repo) — depois disso o deploy deve subir com o banco já pronto.
 
 ## Como rodar localmente
 
