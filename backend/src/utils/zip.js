@@ -3,7 +3,7 @@ import { PassThrough } from 'stream';
 import { getQuery } from '../database/postgres-connection.js';
 
 const TABLES_TO_EXPORT = [
-  'users', 'belts', '"beltStations"', '"checklistTemplates"', 'severities',
+  'users', 'belts', '"checklistTemplates"', 'severities',
   '"inspectionOrders"', 'inspections', '"systemLogs"',
 ];
 

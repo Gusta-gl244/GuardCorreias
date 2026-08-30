@@ -45,7 +45,7 @@ export interface ModulePermissions {
 }
 
 export type PermissionModule =
-  | 'users' | 'roles' | 'areas' | 'belts' | 'stations'
+  | 'users' | 'roles' | 'areas' | 'belts'
   | 'checklistTemplates' | 'severities' | 'inspectionOrders'
   | 'inspections' | 'media' | 'settings' | 'auditLog' | 'backups';
 
@@ -83,6 +83,7 @@ export interface Belt {
   tag: string;                   // ex: CV2203
   name: string;
   area?: string;                 // Britagem Primária, Peneiramento Secundário, Moagem, etc.
+  tipoCorreia?: string;          // especificação livre, ex: 36" x 3 lonas x coberturas 5/16" – 1/8" EXTRA ABRASÃO
   comprimento?: number;          // metros
   largura?: number;              // mm
   velocidade?: number;           // m/s
@@ -98,31 +99,8 @@ export interface Belt {
   createdAt: string;
 }
 
-// ─── ESTAÇÕES DE INSPEÇÃO (cabeça → estações → retorno) ───────────────────────
-export type StationType = 'cabeca' | 'intermediaria' | 'esticadora' | 'retorno' | 'descarga';
-export type RoleteStatus = 'ok' | 'atencao' | 'critico' | 'nao-inspecionado';
-export type RoleteTipo = 'carga' | 'retorno' | 'impacto' | 'alinhamento';
-
-export interface Rolete {
-  id: string;
-  tipo: RoleteTipo;
-  posicao: number;               // posição/ordem na estação, usado para desenhar o mapa de roletes
-  status?: RoleteStatus;
-}
-
-export interface BeltStation {
-  id: string;
-  beltId: string;
-  name: string;                  // ex: "Cabeça", "Estação 01", "Esticadora", "Retorno"
-  type: StationType;
-  ordem: number;                 // sequência na rota
-  lat?: number;
-  lng?: number;
-  roletes: Rolete[];
-  createdAt: string;
-}
-
-// ─── CHECKLIST (regras de validação por tipo de estação) ──────────────────────
+// ─── CHECKLIST (checklist único de inspeção da correia, 10 itens fixos do
+// domínio real — ver FL04-75-21031) ────────────────────────────────────────
 export interface ChecklistItem {
   id: string;
   label: string;
@@ -132,8 +110,8 @@ export interface ChecklistTemplate {
   id: string;
   name: string;
   icon: string;
-  appliesTo: string;             // tipo de estação (StationType) ou 'geral'
-  items: ChecklistItem[];        // máximo recomendado 8–12 itens
+  appliesTo: string;             // sempre 'geral' — não existe mais checklist por tipo de estação
+  items: ChecklistItem[];        // os 10 itens fixos do domínio (editáveis pelo admin)
   weight: number;
 }
 
@@ -184,37 +162,19 @@ export interface InspectionOrder {
 }
 
 // ─── INSPEÇÃO (registro central de campo) ──────────────────────────────────────
-export type ItemResult = 'ok' | 'atencao' | 'critico' | 'pendente';
+// Espelha literalmente a legenda da planilha real (FL04-75-21031): OK / NOK /
+// CO ("com observação") / NA ("não aplicável"). `null` = item ainda não
+// respondido pelo técnico (estado inicial do checklist, antes de virar um
+// dos 4 valores da legenda).
+export type ItemResult = 'ok' | 'nok' | 'co' | 'na';
 export type InspectionStatus = 'aberto' | 'em-andamento' | 'pausado' | 'concluido' | 'cancelado';
 
 export interface ChecklistAnswer {
   itemId: string;
   label: string;
-  result: ItemResult;
-  observation?: string;
-  mediaIds: string[];
-}
-
-export interface RoleteAnomaly {
-  id: string;
-  stationId: string;
-  stationName: string;
-  roleteId?: string;
-  tipo?: RoleteTipo;
-  descricao: string;
-  severity: string;              // FK → SeverityOption.id
-  observation?: string;
-  mediaIds: string[];
-}
-
-export interface StationInspection {
-  stationId: string;
-  stationName: string;
-  stationType: StationType;
-  status: 'pendente' | 'ok' | 'atencao' | 'critico';
-  checklist: ChecklistAnswer[];
-  roleteAnomalies: RoleteAnomaly[];
-  notes?: string;
+  result: ItemResult | null;
+  observation?: string;          // obrigatório na prática quando result é 'nok' ou 'co'
+  omNumero?: string;              // nº da OM aberta — só preenchido quando result é 'nok'
   mediaIds: string[];
 }
 
@@ -246,8 +206,7 @@ export interface Inspection {
   dataHoraFim?: string;
   status: InspectionStatus;
   routeMode: RouteMode;
-  stations: StationInspection[];
-  anomalias: RoleteAnomaly[];    // lista achatada de todas as estações, para dashboards
+  checklist: ChecklistAnswer[];  // os 10 itens fixos do domínio, respondidos
   resumoAutomatico?: string;
   assinatura?: InspectionSignature;
   historicoPausas: PauseHistoryEntry[];
@@ -284,12 +243,23 @@ export interface SystemLog {
   userName?: string;
 }
 
+// ─── HISTÓRICO DE MANUTENÇÃO/TROCA (derivado, não editável) ────────────────────
+// Nunca gravado diretamente — derivado a partir das inspeções concluídas da
+// correia que tiveram algum item NOK com nº de OM preenchido (ver
+// getMaintenanceHistoryForBelt em store.ts). Espelha a tabela DATA | ATIVIDADE
+// REALIZADA | ORDEM da planilha real, sem duplicar dado nenhum.
+export interface MaintenanceHistoryEntry {
+  inspectionId: string;
+  data: string;                  // data/hora da inspeção (fim, ou abertura se não concluída)
+  atividade: string;             // itens marcados NOK nessa inspeção, concatenados
+  ordem: string;                 // nº(s) de OM informado(s) pelo técnico
+}
+
 // ─── ESTADO GLOBAL DO SISTEMA ───────────────────────────────────────────────────
 export interface AppData {
   users: SystemUser[];
   areas: Area[];
   belts: Belt[];
-  beltStations: BeltStation[];
   checklistTemplates: ChecklistTemplate[];
   severities: SeverityOption[];
   inspectionOrders: InspectionOrder[];

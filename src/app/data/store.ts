@@ -3,12 +3,12 @@ import type {
   SystemUser,
   Area,
   Belt,
-  BeltStation,
   ChecklistTemplate,
+  ChecklistAnswer,
   SeverityOption,
   InspectionOrder,
   Inspection,
-  StationInspection,
+  MaintenanceHistoryEntry,
   MediaItem,
   SystemLog,
 } from './types';
@@ -32,7 +32,6 @@ export function getStore(): AppData {
       const parsed = JSON.parse(raw) as AppData;
       if (!parsed.areas) parsed.areas = [];
       if (!parsed.belts) parsed.belts = [];
-      if (!parsed.beltStations) parsed.beltStations = [];
       if (!parsed.checklistTemplates) parsed.checklistTemplates = [];
       if (!parsed.severities) parsed.severities = [];
       if (!parsed.inspectionOrders) parsed.inspectionOrders = [];
@@ -81,7 +80,6 @@ export function getInitialData(): AppData {
     users: [],
     areas: [],
     belts: [],
-    beltStations: [],
     checklistTemplates: [],
     severities: [],
     inspectionOrders: [],
@@ -194,46 +192,26 @@ export function deleteBelt(id: string): void {
   enqueueMutation('belts', 'delete', id);
 }
 
-// ─── Estações ────────────────────────────────────────────────────────────────
-
-export function getStationsByBelt(beltId: string): BeltStation[] {
-  return getStore()
-    .beltStations.filter((s) => s.beltId === beltId)
-    .sort((a, b) => a.ordem - b.ordem);
-}
-export function getStationById(id: string): BeltStation | undefined {
-  return getStore().beltStations.find((s) => s.id === id);
-}
-export function addStation(station: BeltStation): void {
-  const store = getStore();
-  store.beltStations.push(station);
-  saveStore(store);
-  enqueueMutation('beltStations', 'create', station.id, station);
-}
-export function updateStation(updated: BeltStation): void {
-  const store = getStore();
-  const idx = store.beltStations.findIndex((s) => s.id === updated.id);
-  if (idx >= 0) store.beltStations[idx] = updated;
-  saveStore(store);
-  enqueueMutation('beltStations', 'update', updated.id, updated);
-}
-export function deleteStation(id: string): void {
-  const store = getStore();
-  store.beltStations = store.beltStations.filter((s) => s.id !== id);
-  saveStore(store);
-  enqueueMutation('beltStations', 'delete', id);
-}
-
-// ─── Checklist templates ───────────────────────────────────────────────────
+// ─── Checklist (checklist único de inspeção da correia) ───────────────────
 
 export function getChecklistTemplates(): ChecklistTemplate[] {
   return getStore().checklistTemplates;
 }
-/** Itens de checklist aplicáveis a uma estação: o modelo específico do tipo
- * dela, ou o modelo 'geral' como fallback. */
-export function getChecklistForStationType(stationType: string): ChecklistTemplate | undefined {
-  const templates = getChecklistTemplates();
-  return templates.find((t) => t.appliesTo === stationType) ?? templates.find((t) => t.appliesTo === 'geral');
+/** O domínio tem um único checklist fixo (os 10 itens da planilha real) —
+ * não existe mais "por tipo de estação". */
+export function getInspectionChecklistTemplate(): ChecklistTemplate | undefined {
+  return getChecklistTemplates()[0];
+}
+/** Monta as respostas em branco (result: null) do checklist único, na ordem
+ * definida pelo admin, prontas para uma nova inspeção. */
+export function buildEmptyChecklist(): ChecklistAnswer[] {
+  const template = getInspectionChecklistTemplate();
+  return (template?.items ?? []).map((item) => ({
+    itemId: item.id,
+    label: item.label,
+    result: null,
+    mediaIds: [],
+  }));
 }
 export function addChecklistTemplate(tpl: ChecklistTemplate): void {
   const store = getStore();
@@ -390,25 +368,6 @@ export function deleteInspectionOrder(id: string): void {
   enqueueMutation('inspectionOrders', 'delete', id);
 }
 
-/** Monta a lista de estações vazias (status 'pendente') prontas para o
- * checklist, na ordem da rota da correia. */
-function buildEmptyStations(beltId: string): StationInspection[] {
-  return getStationsByBelt(beltId).map((s) => ({
-    stationId: s.id,
-    stationName: s.name,
-    stationType: s.type,
-    status: 'pendente',
-    checklist: (getChecklistForStationType(s.type)?.items ?? []).map((item) => ({
-      itemId: item.id,
-      label: item.label,
-      result: 'pendente' as const,
-      mediaIds: [],
-    })),
-    roleteAnomalies: [],
-    mediaIds: [],
-  }));
-}
-
 /** Inicia (ou retoma) uma ordem de inspeção — cria o registro de Inspection
  * na primeira vez, ou apenas reabre o já existente se estava pausado. */
 export function startOrder(orderId: string, userId: string, userName: string): InspectionOrder | null {
@@ -446,8 +405,7 @@ export function startOrder(orderId: string, userId: string, userName: string): I
       dataHoraAbertura: now,
       status: 'em-andamento',
       routeMode: order.routeMode || 'sugerida',
-      stations: buildEmptyStations(order.beltId),
-      anomalias: [],
+      checklist: buildEmptyChecklist(),
       historicoPausas: [],
       origem: 'app',
     };
@@ -510,10 +468,13 @@ export function completeOrder(orderId: string, userId: string, userName: string)
 
     const belt = store.belts.find((b) => b.id === order.beltId);
     if (belt) {
-      const hasCritico = insp.stations.some((s) => s.status === 'critico');
-      const hasAtencao = insp.stations.some((s) => s.status === 'atencao');
-      belt.healthStatus = hasCritico ? 'critico' : hasAtencao ? 'atencao' : 'saudavel';
-      belt.critica = hasCritico;
+      // NOK vira "crítico" (algo fora de condição física), CO vira "atenção"
+      // (com observação, mas sem exigir ação imediata) — mesmo mapeamento de
+      // cores/prioridade que já existia, só remapeado para a legenda real.
+      const hasNok = insp.checklist.some((c) => c.result === 'nok');
+      const hasCo = insp.checklist.some((c) => c.result === 'co');
+      belt.healthStatus = hasNok ? 'critico' : hasCo ? 'atencao' : 'saudavel';
+      belt.critica = hasNok;
       enqueueMutation('belts', 'update', belt.id, belt);
     }
   }
@@ -526,12 +487,11 @@ export function completeOrder(orderId: string, userId: string, userName: string)
 
 /** Salva o progresso do checklist (chamado a cada resposta, para nunca
  * perder trabalho em caso de fechamento inesperado do app). */
-export function saveInspectionProgress(inspectionId: string, stations: StationInspection[], observacoesGerais?: string): void {
+export function saveInspectionProgress(inspectionId: string, checklist: ChecklistAnswer[], observacoesGerais?: string): void {
   const store = getStore();
   const insp = store.inspections.find((i) => i.id === inspectionId);
   if (!insp) return;
-  insp.stations = stations;
-  insp.anomalias = stations.flatMap((s) => s.roleteAnomalies);
+  insp.checklist = checklist;
   if (observacoesGerais !== undefined) insp.observacoesGerais = observacoesGerais;
   saveStore(store);
   syncInspection(insp);
@@ -554,6 +514,36 @@ export function getInspectionById(id: string): Inspection | undefined {
 }
 export function getInspectionByOrderId(orderId: string): Inspection | undefined {
   return getStore().inspections.find((i) => i.orderId === orderId);
+}
+
+/**
+ * Histórico de Manutenção/Troca da correia — nunca editado diretamente pelo
+ * supervisor/técnico (evitaria dado duplicado e divergente do que foi
+ * realmente registrado em campo). Derivado a partir das inspeções concluídas
+ * dessa correia que tiveram algum item NOK com nº de OM preenchido: DATA =
+ * fim da inspeção, ATIVIDADE = os itens NOK dessa inspeção, ORDEM = o(s)
+ * nº(s) de OM informado(s). Espelha a tabela DATA | ATIVIDADE REALIZADA |
+ * ORDEM da planilha real (FL04-75-21031).
+ */
+export function getMaintenanceHistoryForBelt(beltId: string): MaintenanceHistoryEntry[] {
+  return getInspections()
+    .filter((i) => i.beltId === beltId && i.status === 'concluido')
+    .map((i): MaintenanceHistoryEntry | null => {
+      const nokItems = (i.checklist ?? []).filter((c) => c.result === 'nok');
+      if (nokItems.length === 0) return null;
+      const ordens = Array.from(
+        new Set(nokItems.map((c) => c.omNumero?.trim()).filter((v): v is string => !!v))
+      );
+      if (ordens.length === 0) return null;
+      return {
+        inspectionId: i.id,
+        data: i.dataHoraFim || i.dataHoraAbertura,
+        atividade: nokItems.map((c) => c.label).join(', '),
+        ordem: ordens.join(', '),
+      };
+    })
+    .filter((e): e is MaintenanceHistoryEntry => e !== null)
+    .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
 }
 
 // ─── Mídia (fotos / vídeos / áudios) ───────────────────────────────────────

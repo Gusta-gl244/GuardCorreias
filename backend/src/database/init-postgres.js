@@ -6,9 +6,9 @@ import { initDb, runSQL } from './postgres-connection.js';
 // Mesmo padrão do INSPEC360: cada entidade de topo é uma tabela real com
 // colunas de sincronização ("updatedAt", "deletedAt" como tombstone,
 // "deviceId" para saber se o registro nasceu offline). Listas aninhadas que o
-// frontend sempre lê/grava como uma unidade só (roletes de uma estação,
-// itens de checklist, estações+achados de uma inspeção) viram colunas JSONB
-// em vez de tabelas filhas.
+// frontend sempre lê/grava como uma unidade só (itens de checklist, o
+// checklist respondido de uma inspeção) viram colunas JSONB em vez de
+// tabelas filhas.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function initializeDatabase() {
@@ -79,6 +79,7 @@ export async function initializeDatabase() {
       tag TEXT NOT NULL,
       name TEXT NOT NULL,
       area TEXT,
+      "tipoCorreia" TEXT,
       comprimento REAL,
       largura REAL,
       velocidade REAL,
@@ -98,25 +99,22 @@ export async function initializeDatabase() {
     )
   `);
 
-  // ── Estações de inspeção (cabeça → estações → retorno) ─────────────────
-  await runSQL(`
-    CREATE TABLE IF NOT EXISTS "beltStations" (
-      id TEXT PRIMARY KEY,
-      "beltId" TEXT NOT NULL,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL DEFAULT 'intermediaria' CHECK(type IN ('cabeca', 'intermediaria', 'esticadora', 'retorno', 'descarga')),
-      ordem INTEGER NOT NULL DEFAULT 0,
-      lat REAL,
-      lng REAL,
-      roletes JSONB NOT NULL DEFAULT '[]',
-      "createdAt" TEXT NOT NULL,
-      "updatedAt" TEXT NOT NULL,
-      "deletedAt" TEXT,
-      "deviceId" TEXT
-    )
-  `);
+  // "tipoCorreia" (especificação livre da correia, ex.: 36" x 3 lonas x
+  // coberturas 5/16" – 1/8" EXTRA ABRASÃO) — adicionado depois da criação
+  // inicial da tabela; cobre bancos já existentes (banco novo já nasce com a
+  // coluna, pelo CREATE TABLE acima, então isto vira um no-op silencioso).
+  await runSQL(`ALTER TABLE belts ADD COLUMN IF NOT EXISTS "tipoCorreia" TEXT`);
 
-  // ── Modelos de checklist (itens padrão por tipo de estação) ────────────
+  // O modelo antigo de "estações + mapa de roletes" foi substituído por um
+  // checklist único por correia (ver coluna "checklist" em "inspections",
+  // abaixo) — a planilha real do cliente não tem conceito de estação nem de
+  // rolete individual. Tabela removida; DROP é seguro mesmo em banco já
+  // existente porque nada mais no app lê ou escreve nela.
+  await runSQL(`DROP TABLE IF EXISTS "beltStations"`);
+
+  // ── Checklist único de inspeção (os 10 itens fixos do domínio real, ver
+  // seed.js) — "appliesTo" fica sempre 'geral', mantido só por compatibilidade
+  // de schema; não existe mais checklist por tipo de estação. ────────────
   await runSQL(`
     CREATE TABLE IF NOT EXISTS "checklistTemplates" (
       id TEXT PRIMARY KEY,
@@ -174,6 +172,10 @@ export async function initializeDatabase() {
   `);
 
   // ── Inspeções (registro central, ID = INS-AAAAMMDD-TAG-XXX) ────────────
+  // "checklist" é o checklist único e achatado da correia (10 itens fixos do
+  // domínio real, ver seed.js) — substitui o antigo "stations" (checklist
+  // aninhado por estação) e "anomalias" (achados por rolete), que não têm
+  // mais equivalente no modelo real do cliente.
   await runSQL(`
     CREATE TABLE IF NOT EXISTS inspections (
       id TEXT PRIMARY KEY,
@@ -189,8 +191,7 @@ export async function initializeDatabase() {
       "dataHoraFim" TEXT,
       status TEXT NOT NULL DEFAULT 'aberto' CHECK(status IN ('aberto', 'em-andamento', 'pausado', 'concluido', 'cancelado')),
       "routeMode" TEXT NOT NULL DEFAULT 'sugerida',
-      stations JSONB NOT NULL DEFAULT '[]',
-      anomalias JSONB NOT NULL DEFAULT '[]',
+      checklist JSONB NOT NULL DEFAULT '[]',
       "resumoAutomatico" TEXT,
       assinatura JSONB,
       "historicoPausas" JSONB NOT NULL DEFAULT '[]',
@@ -202,6 +203,15 @@ export async function initializeDatabase() {
       "deviceId" TEXT
     )
   `);
+
+  // Cobre bancos já existentes, criados antes desta mudança de modelo: o
+  // CREATE TABLE acima só define "checklist" em banco novo. Sem dado
+  // migrável de verdade entre os formatos (achatado vs. por estação), então
+  // as colunas antigas são só descartadas — não há conversão automática de
+  // inspeções antigas para o checklist novo.
+  await runSQL(`ALTER TABLE inspections DROP COLUMN IF EXISTS stations`);
+  await runSQL(`ALTER TABLE inspections DROP COLUMN IF EXISTS anomalias`);
+  await runSQL(`ALTER TABLE inspections ADD COLUMN IF NOT EXISTS checklist JSONB NOT NULL DEFAULT '[]'`);
 
   // ── Mídias de campo (fotos/vídeos/áudios), sempre vinculadas a uma
   // inspeção — é essa vinculação que forma a "pasta por ID" exigida: não
@@ -273,7 +283,6 @@ export async function initializeDatabase() {
   // Índices usados pelo motor de sincronização (pull por "updatedAt") e pela
   // montagem da pasta por inspeção (media por inspectionId).
   await runSQL(`CREATE INDEX IF NOT EXISTS idx_belts_updated ON belts ("updatedAt")`);
-  await runSQL(`CREATE INDEX IF NOT EXISTS idx_stations_updated ON "beltStations" ("updatedAt")`);
   await runSQL(`CREATE INDEX IF NOT EXISTS idx_orders_updated ON "inspectionOrders" ("updatedAt")`);
   await runSQL(`CREATE INDEX IF NOT EXISTS idx_inspections_updated ON inspections ("updatedAt")`);
   await runSQL(`CREATE INDEX IF NOT EXISTS idx_users_updated ON users ("updatedAt")`);

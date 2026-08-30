@@ -49,14 +49,6 @@ export const beltsAPI = {
   async delete(id) { return fetchAPI(`/belts/${id}`, { method: 'DELETE' }); },
 };
 
-export const stationsAPI = {
-  async getAll(beltId) { return fetchAPI(beltId ? `/stations?beltId=${beltId}` : '/stations'); },
-  async getById(id) { return fetchAPI(`/stations/${id}`); },
-  async create(stationData) { return fetchAPI('/stations', { method: 'POST', body: JSON.stringify(stationData) }); },
-  async update(id, stationData) { return fetchAPI(`/stations/${id}`, { method: 'PUT', body: JSON.stringify(stationData) }); },
-  async delete(id) { return fetchAPI(`/stations/${id}`, { method: 'DELETE' }); },
-};
-
 export const checklistTemplatesAPI = {
   async getAll() { return fetchAPI('/checklist-templates'); },
   async getById(id) { return fetchAPI(`/checklist-templates/${id}`); },
@@ -160,7 +152,6 @@ export default {
   rolesAPI,
   areasAPI,
   beltsAPI,
-  stationsAPI,
   checklistTemplatesAPI,
   inspectionOrdersAPI,
   inspectionsAPI,

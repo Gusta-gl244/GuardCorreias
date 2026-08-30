@@ -26,7 +26,6 @@ const DEFAULT_PERMISSIONS = {
     roles: NONE,
     areas: VIEW_ONLY,
     belts: { view: true, create: false, edit: true, delete: false },
-    stations: VIEW_ONLY,
     checklistTemplates: VIEW_ONLY,
     severities: VIEW_ONLY,
     inspectionOrders: { view: true, create: true, edit: true, delete: false },
@@ -41,7 +40,6 @@ const DEFAULT_PERMISSIONS = {
     roles: NONE,
     areas: VIEW_ONLY,
     belts: FULL,
-    stations: FULL,
     checklistTemplates: VIEW_ONLY,
     severities: VIEW_ONLY,
     inspectionOrders: FULL,
@@ -56,7 +54,6 @@ const DEFAULT_PERMISSIONS = {
     roles: FULL,
     areas: FULL,
     belts: FULL,
-    stations: FULL,
     checklistTemplates: FULL,
     severities: FULL,
     inspectionOrders: FULL,
@@ -149,15 +146,16 @@ export async function seedTestAccountsIfEmpty() {
 }
 
 /**
- * Semeia as severidades padrão (baixa/média/alta/crítica) e um checklist
- * genérico por tipo de estação — só na primeira vez que essas tabelas
+ * Semeia as severidades padrão (baixa/média/alta/crítica) e o checklist
+ * único de inspeção de correia — só na primeira vez que essas tabelas
  * estiverem vazias. Diferente das contas de teste, isso NÃO é dado
- * inventado sobre o ativo físico (correias/estações continuam vazias); é
- * configuração de sistema (escala de severidade, itens de checklist),
- * equivalente ao catálogo de componentes que o INSPEC360 populava a partir
- * da planilha real — aqui, como ainda não há planilha real do cliente,
- * usamos um checklist de referência baseado em prática comum de inspeção de
- * correias transportadoras, editável depois pelo admin.
+ * inventado sobre o ativo físico (correias continuam vazias); é
+ * configuração de sistema (escala de severidade, itens de checklist).
+ *
+ * Os 10 itens do checklist são os mesmos, na mesma ordem, da planilha real
+ * usada hoje em campo (form FL04-75-21031, "Chek list - Inspeção de
+ * correias.xlsx") — não é mais um checklist genérico inventado, é o
+ * processo real do cliente. Editável depois pelo admin em Checklists.
  */
 export async function seedDefaultsIfEmpty() {
   const severities = await queries.getAllSeverities();
@@ -174,26 +172,24 @@ export async function seedDefaultsIfEmpty() {
 
   const templates = await queries.getAllChecklistTemplates();
   if (templates.length === 0) {
-    console.log('⚙️  Semeando checklist padrão de estação...');
+    console.log('⚙️  Semeando checklist único de inspeção de correia...');
     const defaultTemplate = {
-      id: 'checklist-estacao-padrao',
-      name: 'Checklist Padrão de Estação',
-      icon: '🔧',
+      id: 'checklist-inspecao-correia',
+      name: 'Checklist de Inspeção de Correia',
+      icon: '📋',
       appliesTo: 'geral',
       weight: 1,
       items: [
-        { id: 'roletes-carga', label: 'Roletes de carga (giro e alinhamento)' },
-        { id: 'roletes-retorno', label: 'Roletes de retorno (giro e alinhamento)' },
-        { id: 'roletes-impacto', label: 'Roletes de impacto' },
-        { id: 'alinhamento-correia', label: 'Alinhamento da correia' },
-        { id: 'emendas', label: 'Emendas (integridade)' },
-        { id: 'raspadores', label: 'Raspadores / limpadores' },
-        { id: 'protecoes', label: 'Proteções e guarda-corpos' },
-        { id: 'estrutura', label: 'Estrutura de suporte (corrosão / deformação)' },
-        { id: 'motores-redutores', label: 'Motores e redutores (ruído / vibração / vazamento)' },
-        { id: 'sistema-frenagem', label: 'Sistema de frenagem / catraca' },
-        { id: 'chave-emergencia', label: 'Chaves de emergência (puxa-fio)' },
-        { id: 'limpeza-geral', label: 'Limpeza geral / acúmulo de material' },
+        { id: 'emenda-borda', label: 'Emenda e Borda' },
+        { id: 'guias-materiais', label: 'Guias de Materiais' },
+        { id: 'estado-correia', label: 'Estado da Correia Transportadora' },
+        { id: 'rolo-motriz-movido', label: 'Rolo Motriz e Movido' },
+        { id: 'roletes-carga-retorno-alinhantes', label: 'Roletes de Carga, Retorno e Auto Alinhantes' },
+        { id: 'raspadores-borrachas', label: 'Raspadores e Borrachas de Contenção' },
+        { id: 'estrutura-protecoes-contrapeso', label: 'Estrutura e Proteções de Tambores de Contrapeso' },
+        { id: 'alinhamento-correia', label: 'Alinhamento da Correia' },
+        { id: 'material-acumulado-limpeza', label: 'Material Acumulado e Limpeza' },
+        { id: 'cabos-roldanas-contrapeso', label: 'Cabos, Roldanas e Contrapeso' },
       ],
     };
     await queries.createChecklistTemplate(defaultTemplate);

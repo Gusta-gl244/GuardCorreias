@@ -64,7 +64,7 @@ router.get('/:id/export', requirePermission('inspections', 'view'), async (req, 
       });
     }
 
-    archive.append(JSON.stringify(inspection.stations || [], null, 2), { name: `${root}/checklist.json` });
+    archive.append(JSON.stringify(inspection.checklist || [], null, 2), { name: `${root}/checklist.json` });
     archive.append(
       JSON.stringify(
         {
@@ -79,7 +79,8 @@ router.get('/:id/export', requirePermission('inspections', 'view'), async (req, 
           status: inspection.status,
           observacoesGerais: inspection.observacoesGerais,
           assinatura: inspection.assinatura,
-          totalAnomalias: (inspection.anomalias || []).length,
+          totalItensNok: (inspection.checklist || []).filter((c) => c.result === 'nok').length,
+          totalItensCo: (inspection.checklist || []).filter((c) => c.result === 'co').length,
           totalMidias: media.length,
         },
         null,

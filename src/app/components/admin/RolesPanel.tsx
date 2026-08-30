@@ -8,7 +8,6 @@ import type { Role, PermissionModule, ModulePermissions, BaseShell } from '@/app
 
 const MODULES: { id: PermissionModule; label: string }[] = [
   { id: 'belts', label: 'Correias' },
-  { id: 'stations', label: 'Estações' },
   { id: 'checklistTemplates', label: 'Checklists' },
   { id: 'severities', label: 'Severidades' },
   { id: 'inspectionOrders', label: 'Ordens de Inspeção' },

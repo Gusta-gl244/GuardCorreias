@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import type { Belt, BeltStation } from '../../data/types';
+import type { Belt } from '../../data/types';
 import { HEALTH_STATUS_COLORS, HEALTH_STATUS_LABELS } from '../../data/beltStatus';
 import { useOnlineStatus } from '../../../context/OfflineContext';
 
@@ -11,19 +11,6 @@ L.Icon.Default.mergeOptions({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
-
-function makeStationIcon(color: string) {
-  return L.divIcon({
-    className: '',
-    html: `<div style="
-      width:14px;height:14px;border-radius:50%;
-      background:${color};border:2px solid white;
-      box-shadow:0 1px 4px rgba(0,0,0,0.4);
-    "></div>`,
-    iconSize: [14, 14],
-    iconAnchor: [7, 7],
-  });
-}
 
 function makeMyLocationIcon() {
   return L.divIcon({
@@ -41,30 +28,24 @@ function makeMyLocationIcon() {
 
 interface BeltMapComponentProps {
   belts: Belt[];
-  stations: BeltStation[];
   onBeltClick?: (belt: Belt) => void;
-  onStationClick?: (station: BeltStation) => void;
 }
 
 const FALLBACK_CENTER: L.LatLngTuple = [-9.67346741500018, -36.74303453562654];
 
-export function BeltMapComponent({ belts, stations, onBeltClick, onStationClick }: BeltMapComponentProps) {
+export function BeltMapComponent({ belts, onBeltClick }: BeltMapComponentProps) {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const layersRef = useRef<L.Layer[]>([]);
   const myLocationMarkerRef = useRef<L.Marker | null>(null);
   const beltsRef = useRef(belts);
-  const stationsRef = useRef(stations);
   const onBeltClickRef = useRef(onBeltClick);
-  const onStationClickRef = useRef(onStationClick);
   const { location } = useOnlineStatus();
 
   useEffect(() => { beltsRef.current = belts; }, [belts]);
-  useEffect(() => { stationsRef.current = stations; }, [stations]);
   useEffect(() => { onBeltClickRef.current = onBeltClick; }, [onBeltClick]);
-  useEffect(() => { onStationClickRef.current = onStationClick; }, [onStationClick]);
 
-  const renderLayers = useCallback((map: L.Map, belts: Belt[], stations: BeltStation[]) => {
+  const renderLayers = useCallback((map: L.Map, belts: Belt[]) => {
     layersRef.current.forEach((l) => l.remove());
     layersRef.current = [];
 
@@ -93,21 +74,6 @@ export function BeltMapComponent({ belts, stations, onBeltClick, onStationClick 
         layersRef.current.push(line);
         validPoints.push(...latlngs);
       }
-    });
-
-    stations.forEach((station) => {
-      const lat = Number(station.lat);
-      const lng = Number(station.lng);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return;
-
-      const belt = belts.find((b) => b.id === station.beltId);
-      const color = belt ? HEALTH_STATUS_COLORS[belt.healthStatus] : '#6b7280';
-      const marker = L.marker([lat, lng], { icon: makeStationIcon(color) });
-      marker.bindTooltip(station.name, { direction: 'top', offset: [0, -8], opacity: 0.9, className: 'station-label' });
-      marker.on('click', () => onStationClickRef.current?.(station));
-      marker.addTo(map);
-      layersRef.current.push(marker);
-      validPoints.push([lat, lng]);
     });
 
     if (validPoints.length > 0) {
@@ -140,7 +106,7 @@ export function BeltMapComponent({ belts, stations, onBeltClick, onStationClick 
 
     setTimeout(() => {
       map.invalidateSize();
-      renderLayers(map, beltsRef.current, stationsRef.current);
+      renderLayers(map, beltsRef.current);
     }, 50);
 
     return () => {
@@ -153,8 +119,8 @@ export function BeltMapComponent({ belts, stations, onBeltClick, onStationClick 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    renderLayers(map, belts, stations);
-  }, [belts, stations, renderLayers]);
+    renderLayers(map, belts);
+  }, [belts, renderLayers]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -171,7 +137,7 @@ export function BeltMapComponent({ belts, stations, onBeltClick, onStationClick 
     }
   }, [location]);
 
-  const hasAnyCoords = belts.some((b) => (b.path || []).length >= 2) || stations.some((s) => Number.isFinite(s.lat) && Number.isFinite(s.lng));
+  const hasAnyCoords = belts.some((b) => (b.path || []).length >= 2);
 
   return (
     <div className="relative w-full h-full">
@@ -208,12 +174,6 @@ export function BeltMapComponent({ belts, stations, onBeltClick, onStationClick 
           0%, 100% { transform: scale(1); opacity: 0.3; }
           50% { transform: scale(1.6); opacity: 0; }
         }
-        .station-label {
-          background: rgba(25, 58, 42, 0.85);
-          border: none; color: white; font-size: 10px; font-weight: 600;
-          padding: 1px 5px; border-radius: 4px; box-shadow: none;
-        }
-        .station-label::before { display: none; }
       `}</style>
     </div>
   );

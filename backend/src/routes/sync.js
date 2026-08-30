@@ -8,15 +8,13 @@ const router = express.Router();
 // campo). Mudanças nessas duas entidades só valem através das rotas
 // dedicadas (/api/users, /api/areas), que fazem hash de senha e checagem de
 // permissão específica — nunca através deste push genérico.
-const PUSH_ENTITIES = ['belts', 'beltStations', 'checklistTemplates', 'severities', 'inspectionOrders', 'inspections', 'media'];
+const PUSH_ENTITIES = ['belts', 'checklistTemplates', 'severities', 'inspectionOrders', 'inspections', 'media'];
 const PULL_ENTITIES = [...PUSH_ENTITIES, 'users', 'areas'];
 
-// Mapeia entidade de sincronização → módulo de permissão (a maioria é 1:1;
-// "beltStations" vira o módulo "stations" para casar com o nome usado no
-// resto do Admin/rotas REST).
+// Mapeia entidade de sincronização → módulo de permissão (hoje é 1:1 em
+// todos os casos).
 const PERMISSION_MODULE = {
   belts: 'belts',
-  beltStations: 'stations',
   checklistTemplates: 'checklistTemplates',
   severities: 'severities',
   inspectionOrders: 'inspectionOrders',

@@ -14,7 +14,6 @@ import { v4 as uuidv4 } from 'uuid';
 const TABLES = {
   users: { pk: 'id' },
   belts: { pk: 'id' },
-  beltStations: { pk: 'id', quoted: '"beltStations"' },
   checklistTemplates: { pk: 'id', quoted: '"checklistTemplates"' },
   severities: { pk: 'id' },
   inspectionOrders: { pk: 'id', quoted: '"inspectionOrders"' },
@@ -276,38 +275,6 @@ export async function deleteBelt(id) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// BELT STATIONS (estações de inspeção)
-// ═════════════════════════════════════════════════════════════════════════════
-
-export async function getAllStations() {
-  return getQuery('SELECT * FROM "beltStations" WHERE "deletedAt" IS NULL ORDER BY "beltId" ASC, ordem ASC');
-}
-
-export async function getStationsByBelt(beltId) {
-  return getQuery('SELECT * FROM "beltStations" WHERE "beltId" = $1 AND "deletedAt" IS NULL ORDER BY ordem ASC', [beltId]);
-}
-
-export async function getStationById(id) {
-  return getQueryOne('SELECT * FROM "beltStations" WHERE id = $1 AND "deletedAt" IS NULL', [id]);
-}
-
-export async function createStation(data) {
-  const now = new Date().toISOString();
-  const result = await upsertLWW('beltStations', data.id || uuidv4(), { ...data, createdAt: data.createdAt || now }, now, data.deviceId);
-  return result.record;
-}
-
-export async function updateStation(id, data) {
-  const now = new Date().toISOString();
-  const result = await upsertLWW('beltStations', id, data, now, data.deviceId);
-  return result.record;
-}
-
-export async function deleteStation(id) {
-  return softDelete('beltStations', id);
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
 // CHECKLIST TEMPLATES
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -419,6 +386,45 @@ export async function updateInspection(id, data) {
 
 export async function deleteInspection(id) {
   return softDelete('inspections', id);
+}
+
+/**
+ * Histórico de Manutenção/Troca de uma correia — nunca gravado diretamente
+ * (evitaria dado duplicado e divergente do que foi realmente registrado em
+ * campo). Derivado das inspeções concluídas dessa correia que tiveram algum
+ * item NOK com nº de OM preenchido: DATA = fim da inspeção, ATIVIDADE = os
+ * itens NOK dessa inspeção, ORDEM = o(s) nº(s) de OM informado(s). Espelha a
+ * tabela DATA | ATIVIDADE REALIZADA | ORDEM da planilha real
+ * (FL04-75-21031). O app usa o equivalente client-side (ver
+ * getMaintenanceHistoryForBelt em src/app/data/store.ts) a partir dos dados
+ * já sincronizados localmente; este helper existe para uso futuro por rotas
+ * server-side (relatórios, exportação) sem duplicar a regra de derivação.
+ */
+export async function getMaintenanceHistoryForBelt(beltId) {
+  const rows = await getQuery(
+    `SELECT id, "dataHoraAbertura", "dataHoraFim", checklist FROM inspections
+     WHERE "beltId" = $1 AND status = 'concluido' AND "deletedAt" IS NULL
+     ORDER BY "dataHoraAbertura" DESC`,
+    [beltId]
+  );
+
+  const history = [];
+  for (const insp of rows) {
+    const checklist = insp.checklist || [];
+    const nokItems = checklist.filter((c) => c.result === 'nok');
+    if (nokItems.length === 0) continue;
+    const ordens = [...new Set(
+      nokItems.map((c) => (c.omNumero || '').trim()).filter((v) => v)
+    )];
+    if (ordens.length === 0) continue;
+    history.push({
+      inspectionId: insp.id,
+      data: insp.dataHoraFim || insp.dataHoraAbertura,
+      atividade: nokItems.map((c) => c.label).join(', '),
+      ordem: ordens.join(', '),
+    });
+  }
+  return history;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

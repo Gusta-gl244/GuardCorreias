@@ -3,11 +3,11 @@ import {
   LogOut,
   RefreshCw,
   Plus,
-  MapPin,
   Layers,
   ClipboardList,
   LayoutDashboard,
   Trash2,
+  Wrench,
   X,
 } from 'lucide-react';
 import guardCorreiasIcon from '../../assets/brand/guardcorreias-logo.png';
@@ -21,17 +21,15 @@ import {
   getAreas,
   addBelt,
   deleteBelt,
-  addStation,
-  deleteStation,
   addInspectionOrder,
   updateInspectionOrder,
+  getMaintenanceHistoryForBelt,
   generateId,
   generateOrderId,
 } from '../data/store';
 import { settingsAPI } from '@/api/client';
-import type { Belt, BeltStation, InspectionOrder, RoleteTipo } from '../data/types';
+import type { Belt, InspectionOrder } from '../data/types';
 import { HEALTH_STATUS_COLORS, HEALTH_STATUS_LABELS } from '../data/beltStatus';
-import { STATION_TYPE_LABELS } from '../data/beltConstants';
 import { forceSync, useDataSync } from '@/hooks/useDataSync';
 import type { User } from '../App';
 
@@ -48,14 +46,12 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
   const { syncCounter } = useDataSync();
 
   const [belts, setBelts] = useState<Belt[]>([]);
-  const [stations, setStations] = useState<BeltStation[]>([]);
   const [orders, setOrders] = useState<InspectionOrder[]>([]);
   const [technicians, setTechnicians] = useState<{ id: string; name: string }[]>([]);
 
   function refresh() {
     const store = getStore();
     setBelts(store.belts);
-    setStations(store.beltStations);
     setOrders(store.inspectionOrders);
     setTechnicians(store.users.filter((u) => u.role === 'tecnico').map((u) => ({ id: u.id, name: u.name })));
   }
@@ -172,7 +168,7 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
         )}
 
         {activeTab === 'correias' && (
-          <BeltsPanel belts={belts} stations={stations} onRefresh={refresh} />
+          <BeltsPanel belts={belts} onRefresh={refresh} />
         )}
 
         {activeTab === 'ordens' && (
@@ -184,16 +180,16 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Correias + Estações
+// Correias
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BELT_FORM_DEFAULTS = {
-  tag: '', name: '', area: '', lat: '', lng: '',
+  tag: '', name: '', area: '', tipoCorreia: '', lat: '', lng: '',
   comprimento: '', largura: '', velocidade: '', capacidade: '',
   critica: false, status: 'ativa' as Belt['status'], observation: '',
 };
 
-function BeltsPanel({ belts, stations, onRefresh }: { belts: Belt[]; stations: BeltStation[]; onRefresh: () => void }) {
+function BeltsPanel({ belts, onRefresh }: { belts: Belt[]; onRefresh: () => void }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedBelt, setSelectedBelt] = useState<Belt | null>(null);
   const [form, setForm] = useState(BELT_FORM_DEFAULTS);
@@ -232,6 +228,7 @@ function BeltsPanel({ belts, stations, onRefresh }: { belts: Belt[]; stations: B
       tag: form.tag.trim().toUpperCase(),
       name: form.name.trim(),
       area: form.area.trim() || undefined,
+      tipoCorreia: form.tipoCorreia.trim() || undefined,
       comprimento: form.comprimento ? Number(form.comprimento) : undefined,
       largura: form.largura ? Number(form.largura) : undefined,
       velocidade: form.velocidade ? Number(form.velocidade) : undefined,
@@ -252,20 +249,13 @@ function BeltsPanel({ belts, stations, onRefresh }: { belts: Belt[]; stations: B
   }
 
   function handleDeleteBelt(id: string) {
-    if (!confirm('Excluir esta correia? As estações vinculadas também devem ser removidas.')) return;
+    if (!confirm('Excluir esta correia?')) return;
     deleteBelt(id);
     onRefresh();
   }
 
   if (selectedBelt) {
-    return (
-      <StationsPanel
-        belt={selectedBelt}
-        stations={stations.filter((s) => s.beltId === selectedBelt.id)}
-        onBack={() => setSelectedBelt(null)}
-        onRefresh={onRefresh}
-      />
-    );
+    return <BeltDetailPanel belt={selectedBelt} onBack={() => setSelectedBelt(null)} />;
   }
 
   return (
@@ -299,6 +289,14 @@ function BeltsPanel({ belts, stations, onRefresh }: { belts: Belt[]; stations: B
           <div>
             <label className="text-xs text-gray-600 mb-1 block">Nome *</label>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Correia Transportadora 03" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 mb-1 block">Tipo de correia</label>
+            <Input
+              value={form.tipoCorreia}
+              onChange={(e) => setForm({ ...form, tipoCorreia: e.target.value })}
+              placeholder='Ex.: 36" x 3 lonas x coberturas 5/16" – 1/8" EXTRA ABRASÃO - 1100 METROS'
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -370,7 +368,7 @@ function BeltsPanel({ belts, stations, onRefresh }: { belts: Belt[]; stations: B
             <button className="flex-1 min-w-0 text-left" onClick={() => setSelectedBelt(belt)}>
               <div className="text-sm" style={{ color: '#193A2A' }}>{belt.tag} — {belt.name}</div>
               <div className="text-xs text-gray-500">
-                {belt.area || '—'} · {stations.filter((s) => s.beltId === belt.id).length} estação(ões) · {HEALTH_STATUS_LABELS[belt.healthStatus]}
+                {belt.area || '—'} · {HEALTH_STATUS_LABELS[belt.healthStatus]}
               </div>
             </button>
             <button onClick={() => handleDeleteBelt(belt.id)} className="text-gray-300 hover:text-red-500 shrink-0">
@@ -386,112 +384,71 @@ function BeltsPanel({ belts, stations, onRefresh }: { belts: Belt[]; stations: B
   );
 }
 
-const ROLETE_TIPOS: RoleteTipo[] = ['carga', 'retorno', 'impacto', 'alinhamento'];
-
-function StationsPanel({ belt, stations, onBack, onRefresh }: { belt: Belt; stations: BeltStation[]; onBack: () => void; onRefresh: () => void }) {
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', type: 'intermediaria' as BeltStation['type'], lat: '', lng: '', numRoletes: '3' });
-
-  function handleCreateStation() {
-    if (!form.name.trim()) return;
-    const lat = parseFloat(form.lat);
-    const lng = parseFloat(form.lng);
-    const n = Math.max(0, parseInt(form.numRoletes, 10) || 0);
-    const station: BeltStation = {
-      id: generateId(),
-      beltId: belt.id,
-      name: form.name.trim(),
-      type: form.type,
-      ordem: stations.length + 1,
-      lat: Number.isFinite(lat) ? lat : undefined,
-      lng: Number.isFinite(lng) ? lng : undefined,
-      roletes: Array.from({ length: n }, (_, i) => ({
-        id: generateId(),
-        tipo: ROLETE_TIPOS[i % ROLETE_TIPOS.length],
-        posicao: i + 1,
-      })),
-      createdAt: new Date().toISOString(),
-    };
-    addStation(station);
-    setForm({ name: '', type: 'intermediaria', lat: '', lng: '', numRoletes: '3' });
-    setShowForm(false);
-    onRefresh();
-  }
-
-  function handleDeleteStation(id: string) {
-    if (!confirm('Excluir esta estação?')) return;
-    deleteStation(id);
-    onRefresh();
-  }
+/**
+ * Ficha da correia: dados de cadastro + Histórico de Manutenção/Troca —
+ * derivado automaticamente das inspeções concluídas dessa correia que
+ * tiveram algum item NOK com nº de OM preenchido (ver getMaintenanceHistoryForBelt
+ * em src/app/data/store.ts). Não é uma tabela editável — evita registrar o
+ * mesmo dado duas vezes (uma na inspeção, outra "à mão" aqui).
+ */
+function BeltDetailPanel({ belt, onBack }: { belt: Belt; onBack: () => void }) {
+  const history = getMaintenanceHistoryForBelt(belt.id);
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
       <div className="flex items-center gap-2">
         <button onClick={onBack} className="text-gray-500 hover:text-gray-700 text-sm">← Correias</button>
       </div>
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm" style={{ color: '#193A2A' }}>{belt.tag} — Rota de Inspeção ({stations.length} estações)</h2>
-        <Button size="sm" className="text-white" style={{ backgroundColor: '#AA8933' }} onClick={() => setShowForm(!showForm)}>
-          <Plus className="w-4 h-4 mr-1.5" />Nova Estação
-        </Button>
-      </div>
 
-      {showForm && (
-        <Card className="p-4 space-y-3">
-          <div>
-            <label className="text-xs text-gray-600 mb-1 block">Nome *</label>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Estação 01" />
+      <Card className="p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: HEALTH_STATUS_COLORS[belt.healthStatus] }} />
+          <h2 className="text-sm" style={{ color: '#193A2A' }}>{belt.tag} — {belt.name}</h2>
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-gray-600 pt-1">
+          <div>Área: <span className="text-gray-800">{belt.area || '—'}</span></div>
+          <div>Saúde: <span className="text-gray-800">{HEALTH_STATUS_LABELS[belt.healthStatus]}</span></div>
+          <div>Comprimento: <span className="text-gray-800">{belt.comprimento ? `${belt.comprimento} m` : '—'}</span></div>
+          <div>Largura: <span className="text-gray-800">{belt.largura ? `${belt.largura} mm` : '—'}</span></div>
+          <div>Velocidade: <span className="text-gray-800">{belt.velocidade ? `${belt.velocidade} m/s` : '—'}</span></div>
+          <div>Capacidade: <span className="text-gray-800">{belt.capacidade ? `${belt.capacidade} t/h` : '—'}</span></div>
+        </div>
+        {belt.tipoCorreia && (
+          <div className="pt-1">
+            <div className="text-xs text-gray-500">Tipo de correia</div>
+            <div className="text-sm text-gray-800">{belt.tipoCorreia}</div>
           </div>
-          <div>
-            <label className="text-xs text-gray-600 mb-1 block">Tipo</label>
-            <select
-              value={form.type}
-              onChange={(e) => setForm({ ...form, type: e.target.value as BeltStation['type'] })}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            >
-              {Object.entries(STATION_TYPE_LABELS).map(([val, label]) => (
-                <option key={val} value={val}>{label}</option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-gray-600 mb-1 block">Latitude</label>
-              <Input value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} placeholder="-9.6734" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-600 mb-1 block">Longitude</label>
-              <Input value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} placeholder="-36.7430" />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-gray-600 mb-1 block">Número de roletes</label>
-            <Input type="number" min={0} value={form.numRoletes} onChange={(e) => setForm({ ...form, numRoletes: e.target.value })} />
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>Cancelar</Button>
-            <Button className="flex-1 text-white" style={{ backgroundColor: '#193A2A' }} onClick={handleCreateStation}>Criar Estação</Button>
-          </div>
-        </Card>
-      )}
-
-      <div className="space-y-2">
-        {stations.sort((a, b) => a.ordem - b.ordem).map((s) => (
-          <Card key={s.id} className="p-3.5 flex items-center gap-3">
-            <MapPin className="w-4 h-4 text-gray-300 shrink-0" />
-            <div className="flex-1">
-              <div className="text-sm" style={{ color: '#193A2A' }}>{s.ordem}. {s.name}</div>
-              <div className="text-xs text-gray-500">{STATION_TYPE_LABELS[s.type]} · {s.roletes.length} roletes</div>
-            </div>
-            <button onClick={() => handleDeleteStation(s.id)} className="text-gray-300 hover:text-red-500 shrink-0">
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </Card>
-        ))}
-        {stations.length === 0 && !showForm && (
-          <Card className="p-8 text-center text-sm text-gray-400">Nenhuma estação cadastrada — o técnico não conseguirá iniciar uma inspeção nesta correia até cadastrar ao menos uma.</Card>
         )}
-      </div>
+        {belt.observation && (
+          <div className="pt-1">
+            <div className="text-xs text-gray-500">Observações</div>
+            <div className="text-sm text-gray-800">{belt.observation}</div>
+          </div>
+        )}
+      </Card>
+
+      <Card className="overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-1.5">
+          <Wrench className="w-3.5 h-3.5 text-gray-400" />
+          <h3 className="text-sm" style={{ color: '#193A2A' }}>Histórico de Manutenção/Troca ({history.length})</h3>
+        </div>
+        <div className="divide-y divide-gray-50">
+          {history.map((h) => (
+            <div key={h.inspectionId} className="px-4 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-gray-500">{new Date(h.data).toLocaleDateString('pt-BR')}</span>
+                {h.ordem && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">OM: {h.ordem}</span>}
+              </div>
+              <div className="text-sm text-gray-800 mt-0.5">{h.atividade}</div>
+            </div>
+          ))}
+          {history.length === 0 && (
+            <div className="px-4 py-8 text-center text-sm text-gray-400">
+              Nenhuma manutenção registrada ainda — aparece aqui automaticamente quando uma inspeção concluída tiver algum item NOK com nº de OM preenchido.
+            </div>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

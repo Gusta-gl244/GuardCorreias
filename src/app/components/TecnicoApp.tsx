@@ -473,9 +473,7 @@ export function TecnicoApp({ user, onLogout }: TecnicoAppProps) {
           <div className="p-3 h-[calc(100vh-140px)]">
             <BeltMapComponent
               belts={belts}
-              stations={getStore().beltStations}
               onBeltClick={(belt) => handleStartFreeInspection(belt.id)}
-              onStationClick={(station) => handleStartFreeInspection(station.beltId)}
             />
           </div>
         )}
