@@ -74,8 +74,8 @@ export async function loadFromBackend(): Promise<void> {
 export function getInitialData(): AppData {
   // Tudo começa vazio de propósito — nenhum dado de exemplo é semeado aqui.
   // O catálogo de checklist/severidades vem do servidor (semeado no boot do
-  // backend) assim que o primeiro pull autenticado completa; correias e
-  // estações ficam vazias até a importação dos dados reais da planta.
+  // backend) assim que o primeiro pull autenticado completa; correias
+  // ficam vazias até a importação dos dados reais da planta.
   return {
     users: [],
     areas: [],

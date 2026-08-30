@@ -11,7 +11,6 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 const ENTITY_TO_COLLECTION: Record<string, string> = {
   users: 'users',
   belts: 'belts',
-  beltStations: 'beltStations',
   checklistTemplates: 'checklistTemplates',
   severities: 'severities',
   inspectionOrders: 'inspectionOrders',
