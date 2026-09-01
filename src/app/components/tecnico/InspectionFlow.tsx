@@ -90,27 +90,39 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
     );
   }
 
-  function save(updated: ChecklistAnswer[]) {
-    setChecklist(updated);
-    saveInspectionProgress(insp!.id, updated);
+  /** Sempre atualiza a partir do estado mais recente (functional update do
+   * React), nunca da variável `checklist` fechada no escopo do componente —
+   * essencial aqui porque `handleItemPhotosChange` faz processamento
+   * assíncrono (watermark + FileReader) antes de chamar isso; se o usuário
+   * digitar numa observação ou trocar o resultado de outro item enquanto
+   * isso está em andamento, uma atualização baseada em `checklist` (valor do
+   * momento em que a função foi criada) pode sobrescrever a outra e "perder"
+   * a foto ou a resposta mais recente. */
+  function save(update: (prev: ChecklistAnswer[]) => ChecklistAnswer[]) {
+    setChecklist((prev) => {
+      const updated = update(prev);
+      saveInspectionProgress(insp!.id, updated);
+      return updated;
+    });
   }
 
   function setItemResult(itemId: string, result: ItemResult) {
-    const updated = checklist.map((c) =>
-      c.itemId === itemId
-        ? { ...c, result, omNumero: result === 'nok' ? c.omNumero : undefined }
-        : c
+    save((prev) =>
+      prev.map((c) =>
+        c.itemId === itemId
+          ? { ...c, result, omNumero: result === 'nok' ? c.omNumero : undefined }
+          : c
+      )
     );
-    save(updated);
     setValidationError('');
   }
 
   function setItemObservation(itemId: string, observation: string) {
-    save(checklist.map((c) => (c.itemId === itemId ? { ...c, observation } : c)));
+    save((prev) => prev.map((c) => (c.itemId === itemId ? { ...c, observation } : c)));
   }
 
   function setItemOmNumero(itemId: string, omNumero: string) {
-    save(checklist.map((c) => (c.itemId === itemId ? { ...c, omNumero } : c)));
+    save((prev) => prev.map((c) => (c.itemId === itemId ? { ...c, omNumero } : c)));
   }
 
   function itemPhotos(item: ChecklistAnswer): string[] {
@@ -122,29 +134,31 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
    * checklist — as fotos em si vivem na coleção "media" (ligada ao ID da
    * inspeção, formando a pasta exigida no export). */
   function handleItemPhotosChange(itemId: string, newPhotos: string[]) {
-    const item = checklist.find((c) => c.itemId === itemId)!;
-    const mediaIds = item.mediaIds ?? [];
-    const keptIds = mediaIds.filter((id) => newPhotos.includes(mediaMap.get(id) || '__none__'));
-    const existingBase64 = new Set(keptIds.map((id) => mediaMap.get(id)));
-    const addedIds: string[] = [];
-    for (const photo of newPhotos) {
-      if (existingBase64.has(photo)) continue;
-      const id = generateId();
-      addMedia({
-        id,
-        inspectionId: insp!.id,
-        beltTag: insp!.beltTag,
-        tipo: 'foto',
-        filename: `foto_${Date.now()}_${id.slice(0, 6)}.jpg`,
-        mimeType: 'image/jpeg',
-        dataBase64: photo,
-        lat: location?.latitude,
-        lng: location?.longitude,
-        capturedAt: new Date().toISOString(),
-      });
-      addedIds.push(id);
-    }
-    save(checklist.map((c) => (c.itemId === itemId ? { ...c, mediaIds: [...keptIds, ...addedIds] } : c)));
+    save((prev) => {
+      const item = prev.find((c) => c.itemId === itemId)!;
+      const mediaIds = item.mediaIds ?? [];
+      const keptIds = mediaIds.filter((id) => newPhotos.includes(mediaMap.get(id) || '__none__'));
+      const existingBase64 = new Set(keptIds.map((id) => mediaMap.get(id)));
+      const addedIds: string[] = [];
+      for (const photo of newPhotos) {
+        if (existingBase64.has(photo)) continue;
+        const id = generateId();
+        addMedia({
+          id,
+          inspectionId: insp!.id,
+          beltTag: insp!.beltTag,
+          tipo: 'foto',
+          filename: `foto_${Date.now()}_${id.slice(0, 6)}.jpg`,
+          mimeType: 'image/jpeg',
+          dataBase64: photo,
+          lat: location?.latitude,
+          lng: location?.longitude,
+          capturedAt: new Date().toISOString(),
+        });
+        addedIds.push(id);
+      }
+      return prev.map((c) => (c.itemId === itemId ? { ...c, mediaIds: [...keptIds, ...addedIds] } : c));
+    });
   }
 
   // ── Validação do checklist ──────────────────────────────────────────────
