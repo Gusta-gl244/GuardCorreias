@@ -13,7 +13,17 @@ if ("serviceWorker" in navigator) {
       .register("/service-worker.js", { scope: "/" })
       .then((registration) => {
         console.log("✅ Service Worker registrado");
-        
+
+        // Verificar atualização imediatamente ao abrir o app — sem isso, o
+        // navegador só checava no intervalo de 5 minutos abaixo (ou em
+        // alguma navegação futura, de forma inconsistente entre
+        // navegadores), então quem abria o app logo após um deploy novo via
+        // a versão antiga por até 5 minutos, mesmo se o servidor já tivesse
+        // a versão nova.
+        registration.update().catch(err => {
+          console.log("Erro ao verificar atualização do SW:", err);
+        });
+
         // Verificar atualizações a cada 5 minutos
         setInterval(() => {
           registration.update().catch(err => {

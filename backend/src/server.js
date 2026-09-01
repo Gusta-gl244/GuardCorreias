@@ -46,6 +46,16 @@ app.use(cors({
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
+// O service worker precisa ser sempre revalidado — se o navegador cachear
+// esse arquivo especificamente (via cache HTTP comum, fora do Cache API do
+// próprio SW), ele nunca vê o BUILD_VERSION novo gerado a cada build, e o
+// app fica preso na versão antiga mesmo depois de um deploy novo.
+app.get('/service-worker.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  const distSw = path.join(__dirname, '../../dist/service-worker.js');
+  res.sendFile(fs.existsSync(distSw) ? distSw : path.join(__dirname, '../public/service-worker.js'));
+});
+
 app.use(express.static(path.join(__dirname, '../public')));
 
 const distPath = path.join(__dirname, '../../dist');
