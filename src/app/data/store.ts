@@ -198,9 +198,17 @@ export function getChecklistTemplates(): ChecklistTemplate[] {
   return getStore().checklistTemplates;
 }
 /** O domínio tem um único checklist fixo (os 10 itens da planilha real) —
- * não existe mais "por tipo de estação". */
+ * não existe mais "por tipo de estação". Seleciona pelo id canônico, nunca
+ * por índice: se o dispositivo ainda tiver localmente um template antigo
+ * (ex.: "checklist-estacao-padrao", de antes da reestruturação) junto do
+ * novo, pegar o primeiro do array às cegas pode escolher o errado. */
 export function getInspectionChecklistTemplate(): ChecklistTemplate | undefined {
-  return getChecklistTemplates()[0];
+  const templates = getChecklistTemplates();
+  const canonical = templates.find((t) => t.id === 'checklist-inspecao-correia');
+  if (canonical) return canonical;
+  // Fallback defensivo (não deveria acontecer em uso normal): o template
+  // mais recentemente atualizado, nunca "o primeiro que aparecer".
+  return [...templates].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0];
 }
 /** Monta as respostas em branco (result: null) do checklist único, na ordem
  * definida pelo admin, prontas para uma nova inspeção. */
@@ -405,6 +413,7 @@ export function startOrder(orderId: string, userId: string, userName: string): I
       dataHoraAbertura: now,
       status: 'em-andamento',
       routeMode: order.routeMode || 'sugerida',
+      omNumero: order.omNumero,
       checklist: buildEmptyChecklist(),
       historicoPausas: [],
       origem: 'app',

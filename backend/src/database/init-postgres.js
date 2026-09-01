@@ -161,6 +161,7 @@ export async function initializeDatabase() {
       "resumedAt" TEXT,
       "completedAt" TEXT,
       "inspectionId" TEXT,
+      "omNumero" TEXT,
       "supervisorNotes" TEXT,
       "reviewStatus" TEXT NOT NULL DEFAULT 'aguardando' CHECK("reviewStatus" IN ('aguardando', 'aprovado', 'complemento', 'rejeitado')),
       "activityLog" JSONB NOT NULL DEFAULT '[]',
@@ -191,6 +192,7 @@ export async function initializeDatabase() {
       "dataHoraFim" TEXT,
       status TEXT NOT NULL DEFAULT 'aberto' CHECK(status IN ('aberto', 'em-andamento', 'pausado', 'concluido', 'cancelado')),
       "routeMode" TEXT NOT NULL DEFAULT 'sugerida',
+      "omNumero" TEXT,
       checklist JSONB NOT NULL DEFAULT '[]',
       "resumoAutomatico" TEXT,
       assinatura JSONB,
@@ -212,6 +214,12 @@ export async function initializeDatabase() {
   await runSQL(`ALTER TABLE inspections DROP COLUMN IF EXISTS stations`);
   await runSQL(`ALTER TABLE inspections DROP COLUMN IF EXISTS anomalias`);
   await runSQL(`ALTER TABLE inspections ADD COLUMN IF NOT EXISTS checklist JSONB NOT NULL DEFAULT '[]'`);
+
+  // Nº da OM digitado pelo supervisor na criação da ordem (campo obrigatório
+  // no formulário), propagado para a inspeção resultante — cobre bancos já
+  // existentes, criados antes deste campo.
+  await runSQL(`ALTER TABLE "inspectionOrders" ADD COLUMN IF NOT EXISTS "omNumero" TEXT`);
+  await runSQL(`ALTER TABLE inspections ADD COLUMN IF NOT EXISTS "omNumero" TEXT`);
 
   // ── Mídias de campo (fotos/vídeos/áudios), sempre vinculadas a uma
   // inspeção — é essa vinculação que forma a "pasta por ID" exigida: não

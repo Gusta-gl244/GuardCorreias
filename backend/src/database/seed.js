@@ -170,11 +170,26 @@ export async function seedDefaultsIfEmpty() {
     for (const s of defaults) await queries.createSeverity(s);
   }
 
+  // Roda em TODO boot (não só "se vazio"): garante que existe exatamente um
+  // checklist, o canônico ("checklist-inspecao-correia", os 10 itens reais
+  // da planilha FL04-75-21031) — e remove qualquer outro que tenha sobrado
+  // de antes da reestruturação (ex.: "checklist-estacao-padrao", 12 itens
+  // genéricos inventados). Sem isso, um banco de produção que já existia
+  // antes dessa mudança ficaria com os dois templates ao mesmo tempo, e o
+  // app (que hoje assume "um checklist só") podia acabar usando o errado.
   const templates = await queries.getAllChecklistTemplates();
-  if (templates.length === 0) {
+  const canonicalId = 'checklist-inspecao-correia';
+  for (const t of templates) {
+    if (t.id !== canonicalId) {
+      console.log(`🧹 Removendo checklist obsoleto de antes da reestruturação: "${t.name}" (${t.id})`);
+      await queries.deleteChecklistTemplate(t.id);
+    }
+  }
+  const hasCanonical = templates.some((t) => t.id === canonicalId);
+  if (!hasCanonical) {
     console.log('⚙️  Semeando checklist único de inspeção de correia...');
     const defaultTemplate = {
-      id: 'checklist-inspecao-correia',
+      id: canonicalId,
       name: 'Checklist de Inspeção de Correia',
       icon: '📋',
       appliesTo: 'geral',

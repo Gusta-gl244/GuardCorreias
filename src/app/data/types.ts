@@ -113,6 +113,7 @@ export interface ChecklistTemplate {
   appliesTo: string;             // sempre 'geral' — não existe mais checklist por tipo de estação
   items: ChecklistItem[];        // os 10 itens fixos do domínio (editáveis pelo admin)
   weight: number;
+  updatedAt?: string;
 }
 
 // ─── SEVERIDADE ────────────────────────────────────────────────────────────────
@@ -156,6 +157,7 @@ export interface InspectionOrder {
   resumedAt?: string;
   completedAt?: string;
   inspectionId?: string;         // FK → Inspection.id
+  omNumero?: string;              // nº da OM que originou a ordem — obrigatório no formulário do supervisor
   supervisorNotes?: string;
   reviewStatus?: ReviewStatus;   // revisão do supervisor após conclusão
   activityLog: ActivityLogEntry[];
@@ -206,6 +208,7 @@ export interface Inspection {
   dataHoraFim?: string;
   status: InspectionStatus;
   routeMode: RouteMode;
+  omNumero?: string;              // nº da OM da ordem que originou esta inspeção
   checklist: ChecklistAnswer[];  // os 10 itens fixos do domínio, respondidos
   resumoAutomatico?: string;
   assinatura?: InspectionSignature;

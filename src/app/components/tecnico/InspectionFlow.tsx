@@ -320,7 +320,10 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
         <div className="flex items-center gap-3 px-4 py-3">
           <button onClick={onBack} className="text-white"><ChevronLeft className="w-6 h-6" /></button>
           <div className="flex-1">
-            <div className="text-white text-xs opacity-75">{insp.beltTag} — {insp.beltName}</div>
+            <div className="text-white text-xs opacity-75">
+              {insp.beltTag} — {insp.beltName}
+              {insp.omNumero && <span className="ml-2 px-1.5 py-0.5 rounded bg-white/15">OM {insp.omNumero}</span>}
+            </div>
             {belt?.tipoCorreia && <div className="text-white/70 text-[11px] truncate">{belt.tipoCorreia}</div>}
           </div>
           <button onClick={() => setShowPauseModal(true)} className="text-white/80 hover:text-white">
@@ -342,10 +345,10 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
         {checklist.map((item, i) => {
           const requiresEvidence = item.result != null && RESULTS_REQUIRING_EVIDENCE.includes(item.result);
           return (
-            <div key={item.itemId} className="bg-white rounded-xl shadow-sm px-4 py-3">
-              <div className="flex items-start gap-2 mb-2.5">
-                <span className="text-xs text-gray-400 shrink-0 mt-0.5">{i + 1}.</span>
-                <span className="text-sm flex-1" style={{ color: '#193A2A' }}>{item.label}</span>
+            <div key={item.itemId} className="bg-white rounded-xl shadow-sm px-4 py-3.5">
+              <div className="flex items-start gap-2 mb-3">
+                <span className="text-sm text-gray-400 shrink-0 mt-0.5">{i + 1}.</span>
+                <span className="text-base flex-1" style={{ color: '#193A2A' }}>{item.label}</span>
               </div>
               <div className="grid grid-cols-4 gap-1.5">
                 {(['ok', 'nok', 'co', 'na'] as const).map((r) => {
@@ -356,7 +359,7 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
                     <button
                       key={r}
                       onClick={() => setItemResult(item.itemId, r)}
-                      className="flex items-center justify-center gap-1 py-1.5 rounded-lg border-2 text-xs transition-all"
+                      className="flex items-center justify-center gap-1 py-2 rounded-lg border-2 text-sm transition-all"
                       style={{
                         borderColor: active ? cfg.color : '#e5e7eb',
                         backgroundColor: active ? cfg.bg : '#f9fafb',
@@ -364,7 +367,7 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
                       }}
                       title={cfg.description}
                     >
-                      <Icon className="w-3.5 h-3.5" />
+                      <Icon className="w-4 h-4" />
                       {cfg.label}
                     </button>
                   );
@@ -372,13 +375,13 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
               </div>
 
               {requiresEvidence && (
-                <div className="mt-2.5 space-y-2 rounded-lg p-2.5" style={{ backgroundColor: ITEM_RESULT_CONFIG[item.result!].bg }}>
+                <div className="mt-3 space-y-2.5 rounded-lg p-3" style={{ backgroundColor: ITEM_RESULT_CONFIG[item.result!].bg }}>
                   <Textarea
                     placeholder="Descreva o problema (obrigatório)"
                     value={item.observation || ''}
                     onChange={(e) => setItemObservation(item.itemId, e.target.value)}
                     rows={2}
-                    className="text-xs bg-white"
+                    className="text-sm bg-white"
                   />
                   <PhotoManager
                     componentName={insp.beltTag}
@@ -387,13 +390,13 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
                     onPhotosChange={(photos) => handleItemPhotosChange(item.itemId, photos)}
                   />
                   {itemPhotos(item).length === 0 && (
-                    <p className="text-[11px]" style={{ color: ITEM_RESULT_CONFIG[item.result!].color }}>
+                    <p className="text-xs" style={{ color: ITEM_RESULT_CONFIG[item.result!].color }}>
                       📷 Foto e observação obrigatórias para itens NOK ou CO.
                     </p>
                   )}
                   {item.result === 'nok' && (
                     <div>
-                      <label className="text-[11px] text-gray-500 mb-1 block">Nº da OM aberta (opcional)</label>
+                      <label className="text-xs text-gray-500 mb-1 block">Nº da OM aberta (opcional)</label>
                       <Input
                         value={item.omNumero || ''}
                         onChange={(e) => setItemOmNumero(item.itemId, e.target.value)}

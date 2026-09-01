@@ -1,8 +1,67 @@
 import express from 'express';
 import archiver from 'archiver';
+import * as XLSX from 'xlsx';
 import { PassThrough } from 'stream';
 import * as queries from '../database/queries-postgres.js';
 import { requirePermission } from '../middleware/auth.js';
+
+const RESULT_LABELS = { ok: 'OK', nok: 'NOK', co: 'CO (com observação)', na: 'NA' };
+
+/** Monta a planilha (.xlsx) do relatório de inspeção — layout organizado em
+ * seções (identificação, os 10 itens do checklist, observações gerais,
+ * assinatura), pra ser um documento legível por conta própria, não só o
+ * JSON cru que já ia no ZIP. */
+function buildReportWorkbook(inspection, belt) {
+  const rows = [
+    ['Relatório de Inspeção de Correia Transportadora'],
+    [],
+    ['TAG da Correia', inspection.beltTag || ''],
+    ['Nome da Correia', inspection.beltName || ''],
+    ['Tipo de Correia', belt?.tipoCorreia || ''],
+    ['Nº da OM', inspection.omNumero || ''],
+    ['Técnico', inspection.tecnicoNome || ''],
+    ['Supervisor', inspection.supervisorNome || ''],
+    ['Data/Hora de Abertura', inspection.dataHoraAbertura || ''],
+    ['Data/Hora de Conclusão', inspection.dataHoraFim || ''],
+    ['ID da Inspeção', inspection.id],
+    [],
+    ['ITEM', 'DESCRIÇÃO', 'RESULTADO', 'Nº OM DO ITEM', 'OBSERVAÇÃO'],
+  ];
+
+  const checklist = inspection.checklist || [];
+  checklist.forEach((item, i) => {
+    rows.push([
+      i + 1,
+      item.label,
+      item.result ? RESULT_LABELS[item.result] || item.result : '—',
+      item.omNumero || '',
+      item.observation || '',
+    ]);
+  });
+
+  rows.push([]);
+  rows.push(['OBSERVAÇÕES GERAIS']);
+  rows.push([inspection.observacoesGerais || '—']);
+
+  if (inspection.assinatura) {
+    rows.push([]);
+    rows.push(['ASSINATURA']);
+    rows.push(['Responsável', inspection.assinatura.nome || '']);
+    rows.push(['Data/Hora', inspection.assinatura.dataHora || '']);
+  }
+
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet['!cols'] = [{ wch: 18 }, { wch: 45 }, { wch: 20 }, { wch: 16 }, { wch: 45 }];
+  sheet['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+    { s: { r: 12 + checklist.length + 1, c: 0 }, e: { r: 12 + checklist.length + 1, c: 4 } },
+    { s: { r: 12 + checklist.length + 2, c: 0 }, e: { r: 12 + checklist.length + 2, c: 4 } },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Relatório');
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+}
 
 const router = express.Router();
 
@@ -48,6 +107,7 @@ router.get('/:id/export', requirePermission('inspections', 'view'), async (req, 
     const inspection = await queries.getInspectionById(req.params.id);
     if (!inspection) return res.status(404).json({ error: 'Inspeção não encontrada' });
     const media = await queries.getMediaByInspection(inspection.id);
+    const belt = await queries.getBeltById(inspection.beltId);
 
     const archive = archiver('zip', { zlib: { level: 9 } });
     res.setHeader('Content-Type', 'application/zip');
@@ -64,6 +124,7 @@ router.get('/:id/export', requirePermission('inspections', 'view'), async (req, 
       });
     }
 
+    archive.append(buildReportWorkbook(inspection, belt), { name: `${root}/relatorio.xlsx` });
     archive.append(JSON.stringify(inspection.checklist || [], null, 2), { name: `${root}/checklist.json` });
     archive.append(
       JSON.stringify(
@@ -72,6 +133,7 @@ router.get('/:id/export', requirePermission('inspections', 'view'), async (req, 
           beltId: inspection.beltId,
           beltTag: inspection.beltTag,
           beltName: inspection.beltName,
+          omNumero: inspection.omNumero,
           tecnicoNome: inspection.tecnicoNome,
           supervisorNome: inspection.supervisorNome,
           dataHoraAbertura: inspection.dataHoraAbertura,

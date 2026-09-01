@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   ClipboardList,
-  Map as MapIcon,
   Settings,
   LogOut,
   ChevronRight,
@@ -25,7 +24,6 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
 import { InspectionFlow } from './tecnico/InspectionFlow';
-import { BeltMapComponent } from './tecnico/BeltMapComponent';
 import {
   getStore,
   getPendingOrders,
@@ -45,7 +43,7 @@ interface TecnicoAppProps {
   onLogout: () => void;
 }
 
-type Tab = 'demandas' | 'mapa' | 'config';
+type Tab = 'demandas' | 'config';
 type Screen =
   | { type: 'menu' }
   | { type: 'order-detail'; orderId: string }
@@ -469,15 +467,6 @@ export function TecnicoApp({ user, onLogout }: TecnicoAppProps) {
           </div>
         )}
 
-        {activeTab === 'mapa' && (
-          <div className="p-3 h-[calc(100vh-140px)]">
-            <BeltMapComponent
-              belts={belts}
-              onBeltClick={(belt) => handleStartFreeInspection(belt.id)}
-            />
-          </div>
-        )}
-
         {activeTab === 'config' && (
           <div className="p-4 space-y-4">
             <Card className="p-4">
@@ -530,7 +519,6 @@ export function TecnicoApp({ user, onLogout }: TecnicoAppProps) {
           {(
             [
               { id: 'demandas', label: 'Demandas', icon: ClipboardList, badge: pendingOrders.length },
-              { id: 'mapa', label: 'Mapa Satélite', icon: MapIcon, badge: 0 },
               { id: 'config', label: 'Configurações', icon: Settings, badge: 0 },
             ] as const
           ).map((tab) => {

@@ -9,6 +9,8 @@ import {
   Trash2,
   Wrench,
   X,
+  FileText,
+  Download,
 } from 'lucide-react';
 import guardCorreiasIcon from '../../assets/brand/guardcorreias-logo.png';
 import grupoLogo from '../../assets/brand/grupo-mvv-bnmc.png';
@@ -27,8 +29,9 @@ import {
   generateId,
   generateOrderId,
 } from '../data/store';
-import { settingsAPI } from '@/api/client';
-import type { Belt, InspectionOrder } from '../data/types';
+import { settingsAPI, inspectionsAPI } from '@/api/client';
+import { downloadBlob } from '@/utils/backupManager';
+import type { Belt, InspectionOrder, Inspection } from '../data/types';
 import { HEALTH_STATUS_COLORS, HEALTH_STATUS_LABELS } from '../data/beltStatus';
 import { forceSync, useDataSync } from '@/hooks/useDataSync';
 import type { User } from '../App';
@@ -38,7 +41,7 @@ interface SupervisorAppProps {
   onLogout: () => void;
 }
 
-type Tab = 'visao-geral' | 'correias' | 'ordens';
+type Tab = 'visao-geral' | 'correias' | 'ordens' | 'relatorios';
 
 export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
   const [activeTab, setActiveTab] = useState<Tab>('visao-geral');
@@ -47,12 +50,14 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
 
   const [belts, setBelts] = useState<Belt[]>([]);
   const [orders, setOrders] = useState<InspectionOrder[]>([]);
+  const [inspections, setInspections] = useState<Inspection[]>([]);
   const [technicians, setTechnicians] = useState<{ id: string; name: string }[]>([]);
 
   function refresh() {
     const store = getStore();
     setBelts(store.belts);
     setOrders(store.inspectionOrders);
+    setInspections(store.inspections);
     setTechnicians(store.users.filter((u) => u.role === 'tecnico').map((u) => ({ id: u.id, name: u.name })));
   }
 
@@ -97,6 +102,7 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
             { id: 'visao-geral', label: 'Visão Geral', icon: LayoutDashboard },
             { id: 'correias', label: 'Correias', icon: Layers },
             { id: 'ordens', label: 'Ordens de Inspeção', icon: ClipboardList },
+            { id: 'relatorios', label: 'Relatórios', icon: FileText },
           ] as const).map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -173,6 +179,10 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
 
         {activeTab === 'ordens' && (
           <OrdersPanel orders={orders} belts={belts} technicians={technicians} onRefresh={refresh} />
+        )}
+
+        {activeTab === 'relatorios' && (
+          <ReportsPanel inspections={inspections} />
         )}
       </div>
     </div>
@@ -466,13 +476,20 @@ function OrdersPanel({
   onRefresh: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ beltId: '', technicianId: '', priority: 'media' as InspectionOrder['priority'], deadline: '', notes: '' });
+  const [form, setForm] = useState({ omNumero: '', beltId: '', technicianId: '', priority: 'media' as InspectionOrder['priority'], deadline: '', notes: '' });
+  const [formError, setFormError] = useState('');
 
   function handleCreateOrder() {
+    if (!form.omNumero.trim()) {
+      setFormError('Informe o número da OM antes de criar a ordem.');
+      return;
+    }
     if (!form.beltId || !form.technicianId) return;
+    setFormError('');
     const now = new Date().toISOString();
     const order: InspectionOrder = {
       id: generateOrderId(),
+      omNumero: form.omNumero.trim(),
       beltId: form.beltId,
       technicianId: form.technicianId,
       supervisorId: '',
@@ -486,7 +503,7 @@ function OrdersPanel({
       activityLog: [],
     };
     addInspectionOrder(order);
-    setForm({ beltId: '', technicianId: '', priority: 'media', deadline: '', notes: '' });
+    setForm({ omNumero: '', beltId: '', technicianId: '', priority: 'media', deadline: '', notes: '' });
     setShowForm(false);
     onRefresh();
   }
@@ -513,6 +530,16 @@ function OrdersPanel({
 
       {showForm && (
         <Card className="p-4 space-y-3">
+          <div>
+            <label className="text-xs text-gray-600 mb-1 block">Nº da OM *</label>
+            <Input
+              value={form.omNumero}
+              onChange={(e) => { setForm({ ...form, omNumero: e.target.value }); setFormError(''); }}
+              placeholder="Ex.: 123456"
+              className="text-sm"
+            />
+          </div>
+          {formError && <p className="text-xs text-red-600">{formError}</p>}
           <div>
             <label className="text-xs text-gray-600 mb-1 block">Correia *</label>
             <select value={form.beltId} onChange={(e) => setForm({ ...form, beltId: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
@@ -573,6 +600,68 @@ function OrdersPanel({
         })}
         {orders.length === 0 && !showForm && (
           <Card className="p-8 text-center text-sm text-gray-400">Nenhuma ordem de inspeção criada ainda.</Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Relatórios
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ReportsPanel({ inspections }: { inspections: Inspection[] }) {
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const completed = [...inspections]
+    .filter((i) => i.status === 'concluido')
+    .sort((a, b) => (b.dataHoraFim || b.dataHoraAbertura).localeCompare(a.dataHoraFim || a.dataHoraAbertura));
+
+  async function handleDownload(insp: Inspection) {
+    setDownloadingId(insp.id);
+    try {
+      const blob = await inspectionsAPI.exportZip(insp.id);
+      downloadBlob(blob, `${insp.id}.zip`);
+    } catch {
+      alert('Falha ao baixar o relatório. Verifique sua conexão e tente novamente.');
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-4">
+      <h2 className="text-sm" style={{ color: '#193A2A' }}>Relatórios de Inspeção ({completed.length})</h2>
+      <p className="text-xs text-gray-500">
+        Cada download traz uma pasta com as fotos da inspeção e uma planilha (relatorio.xlsx) organizada com os 10 itens do checklist, resultado, observações e nº de OM.
+      </p>
+
+      <div className="space-y-2">
+        {completed.map((insp) => (
+          <Card key={insp.id} className="p-3.5 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#f0fdf4' }}>
+              <FileText className="w-4 h-4" style={{ color: '#16a34a' }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm truncate" style={{ color: '#193A2A' }}>{insp.beltTag} — {insp.beltName}</div>
+              <div className="text-xs text-gray-500">
+                {(insp.dataHoraFim || insp.dataHoraAbertura).slice(0, 10)} · {insp.tecnicoNome}
+                {insp.omNumero && ` · OM ${insp.omNumero}`}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleDownload(insp)}
+              disabled={downloadingId === insp.id}
+            >
+              <Download className="w-3.5 h-3.5 mr-1.5" />
+              {downloadingId === insp.id ? 'Baixando...' : 'Baixar'}
+            </Button>
+          </Card>
+        ))}
+        {completed.length === 0 && (
+          <Card className="p-8 text-center text-sm text-gray-400">Nenhuma inspeção concluída ainda.</Card>
         )}
       </div>
     </div>
