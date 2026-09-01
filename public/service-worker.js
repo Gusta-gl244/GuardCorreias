@@ -1,5 +1,5 @@
 // Versionamento: Muda automaticamente para forçar novo cache
-const BUILD_VERSION = '20260818-001'
+const BUILD_VERSION = '2026-09-01T00:33:32.941Z'
 const CACHE_NAME = `guardcorreias-v1-cache-${BUILD_VERSION}`
 
 const STATIC_ASSETS = [
