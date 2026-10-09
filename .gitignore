@@ -44,3 +44,4 @@ tmp/
 # Arquivos de referência/trabalho (plantas, desenhos técnicos, modelo 3D) —
 # não fazem parte do app, alguns são grandes demais para o git
 Referencias/
+.neon
