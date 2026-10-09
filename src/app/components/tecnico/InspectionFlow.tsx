@@ -17,6 +17,7 @@ import {
   pauseOrder,
   signInspection,
   addMedia,
+  deleteMedia,
   getMediaForInspection,
   generateId,
 } from '../../data/store';
@@ -139,6 +140,8 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
       const item = prev.find((c) => c.itemId === itemId)!;
       const mediaIds = item.mediaIds ?? [];
       const keptIds = mediaIds.filter((id) => newPhotos.includes(mediaMap.get(id) || '__none__'));
+      const removedIds = mediaIds.filter((id) => !keptIds.includes(id));
+      removedIds.forEach(deleteMedia);
       const existingBase64 = new Set(keptIds.map((id) => mediaMap.get(id)));
       const addedIds: string[] = [];
       for (const photo of newPhotos) {
@@ -360,16 +363,18 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
         </div>
       </div>
 
-      <div className="flex-1 px-4 py-3 pb-32 space-y-2.5">
+      <div className="flex-1 space-y-4 px-4 py-5 pb-36">
         {checklist.map((item, i) => {
           const requiresEvidence = item.result != null && RESULTS_REQUIRING_EVIDENCE.includes(item.result);
           return (
-            <div key={item.itemId} className="bg-white rounded-xl shadow-sm px-4 py-3.5">
-              <div className="flex items-start gap-2 mb-3">
-                <span className="text-sm text-gray-400 shrink-0 mt-0.5">{i + 1}.</span>
-                <span className="text-base flex-1" style={{ color: '#193A2A' }}>{item.label}</span>
+            <div key={item.itemId} className="space-y-4 rounded-xl border border-gray-200 bg-white px-4 py-4 shadow-sm sm:px-5 sm:py-5">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#edf2ee] text-sm font-bold text-[#193A2A]">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span className="text-lg font-semibold leading-snug text-[#193A2A]">{item.label}</span>
               </div>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {(['ok', 'nok', 'co', 'na'] as const).map((r) => {
                   const cfg = ITEM_RESULT_CONFIG[r];
                   const Icon = RESULT_ICONS[r];
@@ -378,7 +383,8 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
                     <button
                       key={r}
                       onClick={() => setItemResult(item.itemId, r)}
-                      className="flex items-center justify-center gap-1 py-2 rounded-lg border-2 text-sm transition-all"
+                      aria-pressed={active}
+                      className="flex min-h-[62px] items-center gap-2 rounded-xl border-2 px-3 py-2 text-left transition-colors"
                       style={{
                         borderColor: active ? cfg.color : '#e5e7eb',
                         backgroundColor: active ? cfg.bg : '#f9fafb',
@@ -386,41 +392,49 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
                       }}
                       title={cfg.description}
                     >
-                      <Icon className="w-4 h-4" />
-                      {cfg.label}
+                      <Icon className="h-5 w-5 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-bold">{cfg.label}</span>
+                        <span className="mt-0.5 block text-[10px] leading-tight opacity-80">{cfg.description}</span>
+                      </span>
                     </button>
                   );
                 })}
               </div>
 
               {requiresEvidence && (
-                <div className="mt-3 space-y-2.5 rounded-lg p-3" style={{ backgroundColor: ITEM_RESULT_CONFIG[item.result!].bg }}>
-                  <Textarea
-                    placeholder="Descreva o problema (obrigatório)"
-                    value={item.observation || ''}
-                    onChange={(e) => setItemObservation(item.itemId, e.target.value)}
-                    rows={2}
-                    className="text-sm bg-white"
-                  />
-                  <PhotoManager
-                    componentName={insp.beltTag}
-                    anomalyName={item.label}
-                    photos={itemPhotos(item)}
-                    onPhotosChange={(photos) => handleItemPhotosChange(item.itemId, photos)}
-                  />
+                <div className="space-y-4 rounded-xl border border-gray-200 p-4 sm:p-5" style={{ backgroundColor: ITEM_RESULT_CONFIG[item.result!].bg }}>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-gray-800">Descrição do problema</label>
+                    <Textarea
+                      placeholder="Descreva o problema encontrado..."
+                      value={item.observation || ''}
+                      onChange={(e) => setItemObservation(item.itemId, e.target.value)}
+                      rows={3}
+                      className="min-h-24 bg-white text-sm"
+                    />
+                  </div>
+                  <div className="border-t border-gray-300/70 pt-4">
+                    <PhotoManager
+                      componentName={insp.beltTag}
+                      anomalyName={item.label}
+                      photos={itemPhotos(item)}
+                      onPhotosChange={(photos) => handleItemPhotosChange(item.itemId, photos)}
+                    />
+                  </div>
                   {itemPhotos(item).length === 0 && (
-                    <p className="text-xs" style={{ color: ITEM_RESULT_CONFIG[item.result!].color }}>
-                      📷 Foto e observação obrigatórias para itens NOK ou CO.
+                    <p className="text-sm font-medium" style={{ color: ITEM_RESULT_CONFIG[item.result!].color }}>
+                      Foto e observação são obrigatórias para itens NOK ou CO.
                     </p>
                   )}
                   {item.result === 'nok' && (
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">Nº da OM aberta (opcional)</label>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">Nº da OM aberta (opcional)</label>
                       <Input
                         value={item.omNumero || ''}
                         onChange={(e) => setItemOmNumero(item.itemId, e.target.value)}
                         placeholder="Ex.: 123456"
-                        className="text-xs bg-white h-8"
+                        className="h-11 bg-white text-sm"
                       />
                     </div>
                   )}

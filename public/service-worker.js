@@ -1,5 +1,5 @@
 // Versionamento: Muda automaticamente para forçar novo cache
-const BUILD_VERSION = '2026-10-09T20:10:23.563Z'
+const BUILD_VERSION = '2026-10-09T20:41:33.295Z'
 const CACHE_NAME = `guardcorreias-v1-cache-${BUILD_VERSION}`
 
 const STATIC_ASSETS = [
@@ -52,8 +52,18 @@ self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
 
-  // API requests - Network first, fallback to stale cache
-  if (url.pathname.startsWith('/api/')) {
+  // Sync must always reach the live backend; a cached pull can look like a
+  // successful sync while containing stale data from another database state.
+  if (url.pathname.startsWith('/api/sync/')) {
+    event.respondWith(
+      fetch(request).catch(() => new Response(JSON.stringify({ error: 'Servidor de sincronização indisponível', offline: true }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      }))
+    )
+  }
+  // Other API requests - Network first, fallback to stale cache
+  else if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(request)
         .then((response) => {

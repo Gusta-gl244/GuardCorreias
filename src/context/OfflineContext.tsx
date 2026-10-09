@@ -12,6 +12,8 @@ interface OfflineContextType {
   isOnline: boolean
   pendingCount: number
   hasPendingRequests: boolean
+  pushError: string | null
+  pullError: string | null
   location: GeolocationData | null
   locationError: string | null
 }
@@ -21,6 +23,8 @@ const OfflineContext = createContext<OfflineContextType | undefined>(undefined)
 export function OfflineProvider({ children }: { children: React.ReactNode }) {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [pendingCount, setPendingCount] = useState(0)
+  const [pushError, setPushError] = useState<string | null>(null)
+  const [pullError, setPullError] = useState<string | null>(null)
   const [location, setLocation] = useState<GeolocationData | null>(null)
   const [locationError, setLocationError] = useState<string | null>(null)
 
@@ -72,6 +76,30 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     })
 
     return () => navigator.geolocation.clearWatch(watchId)
+  }, [])
+
+  useEffect(() => {
+    const handlePushFailed = (event: Event) => {
+      const detail = (event as CustomEvent<{ error?: string }>).detail
+      setPushError(detail?.error || 'Não foi possível enviar alterações ao servidor.')
+    }
+    const handlePushSuccess = () => setPushError(null)
+    const handlePullFailed = (event: Event) => {
+      const detail = (event as CustomEvent<{ error?: string }>).detail
+      setPullError(detail?.error || 'Não foi possível buscar os dados do servidor.')
+    }
+    const handlePullSuccess = () => setPullError(null)
+
+    window.addEventListener('backend-sync-failed', handlePushFailed)
+    window.addEventListener('backend-sync-success', handlePushSuccess)
+    window.addEventListener('backend-pull-failed', handlePullFailed)
+    window.addEventListener('backend-pull-success', handlePullSuccess)
+    return () => {
+      window.removeEventListener('backend-sync-failed', handlePushFailed)
+      window.removeEventListener('backend-sync-success', handlePushSuccess)
+      window.removeEventListener('backend-pull-failed', handlePullFailed)
+      window.removeEventListener('backend-pull-success', handlePullSuccess)
+    }
   }, [])
 
   // Monitor online/offline
@@ -133,6 +161,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     isOnline,
     pendingCount,
     hasPendingRequests: pendingCount > 0,
+    pushError,
+    pullError,
     location,
     locationError
   }

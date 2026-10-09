@@ -36,6 +36,12 @@ export async function getUpdatedSince(entity, since) {
   return getQuery(`SELECT * FROM ${t} WHERE "updatedAt" > $1 AND "deletedAt" IS NULL ORDER BY "updatedAt" ASC`, [since]);
 }
 
+export async function getActiveIds(entity) {
+  const t = tableName(entity);
+  const rows = await getQuery(`SELECT id FROM ${t} WHERE "deletedAt" IS NULL`);
+  return rows.map((row) => row.id);
+}
+
 export async function getDeletedSince(entity, since) {
   const t = tableName(entity);
   if (!since) return [];

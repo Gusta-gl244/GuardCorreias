@@ -1,6 +1,6 @@
 {
-  "version": "2.1.20261009007",
-  "buildDate": "2026-10-09T20:10:23.563Z",
+  "version": "2.1.20261009013",
+  "buildDate": "2026-10-09T20:41:33.295Z",
   "features": [
     "backend-first-sync",
     "require-backend-mode",

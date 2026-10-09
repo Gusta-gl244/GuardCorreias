@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Camera, MapPin, Trash2 } from 'lucide-react';
+import { Camera, ImagePlus, LoaderCircle, MapPin, Trash2, ZoomIn } from 'lucide-react';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { addWatermarkToImage, addWatermarkToCanvas } from '@/utils/watermarkImage';
 import { CameraWithWatermark } from './CameraWithWatermark';
@@ -28,37 +28,43 @@ export function PhotoManager({
   const [showCamera, setShowCamera] = useState(false);
   const [showGeoInfo, setShowGeoInfo] = useState(false);
   const [viewingIndex, setViewingIndex] = useState<number | null>(null);
+  const [processingPhotos, setProcessingPhotos] = useState(false);
   
   const { location, error: geoError } = useGeolocation();
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    
-    for (const file of files) {
-      try {
-        // Adicionar watermark à imagem
-        const blobWithWatermark = await addWatermarkToImage(file, {
-          latitude: location?.latitude,
-          longitude: location?.longitude,
-          accuracy: location?.accuracy,
-          componentName,
-          anomalyName
-        });
-
-        // Converter blob para base64
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const base64 = event.target?.result as string;
-          onPhotosChange([...photos, base64]);
-        };
-        reader.readAsDataURL(blobWithWatermark);
-      } catch (err) {
-        console.error('Erro ao processar arquivo', err);
-      }
-    }
-
-    // Reset input
     e.target.value = '';
+    if (files.length === 0) return;
+
+    setProcessingPhotos(true);
+    try {
+      const processedPhotos: string[] = [];
+      for (const file of files) {
+        try {
+          const blobWithWatermark = await addWatermarkToImage(file, {
+            latitude: location?.latitude,
+            longitude: location?.longitude,
+            accuracy: location?.accuracy,
+            componentName,
+            anomalyName,
+          });
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Formato de imagem inválido'));
+            reader.onerror = () => reject(reader.error || new Error('Falha ao ler imagem'));
+            reader.readAsDataURL(blobWithWatermark);
+          });
+          processedPhotos.push(base64);
+        } catch (err) {
+          console.error('Erro ao processar arquivo', err);
+        }
+      }
+
+      if (processedPhotos.length > 0) onPhotosChange([...photos, ...processedPhotos]);
+    } finally {
+      setProcessingPhotos(false);
+    }
   };
 
   const removePhoto = (index: number) => {
@@ -92,55 +98,74 @@ export function PhotoManager({
       )}
 
       {/* Action Buttons */}
-      <div className="flex gap-2">
+      <div className="grid grid-cols-2 gap-3">
         <button
           onClick={() => setShowCamera(true)}
-          className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50 text-sm"
+          disabled={processingPhotos}
+          className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm font-semibold transition-colors hover:bg-gray-50 disabled:opacity-50"
           style={{ color: '#193A2A' }}
         >
-          <Camera className="w-4 h-4" />
+          <Camera className="h-5 w-5" />
           Câmera
         </button>
 
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50 text-sm"
+          disabled={processingPhotos}
+          className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm font-semibold transition-colors hover:bg-gray-50 disabled:opacity-50"
           style={{ color: '#193A2A' }}
         >
-          📁 Galeria
+          {processingPhotos ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5" />}
+          {processingPhotos ? 'Processando...' : 'Galeria'}
         </button>
       </div>
 
-      {/* Photos Preview */}
-      {photos.length > 0 && (
-        <div>
-          <p className="text-xs text-gray-600 mb-2 font-medium">
-            Fotos ({photos.length})
-            {location && ' • GPS Registrado'}
-          </p>
-          <div className="grid grid-cols-3 gap-2">
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-gray-800">Fotos registradas</p>
+            {location && <p className="mt-0.5 text-xs text-green-700">GPS registrado</p>}
+          </div>
+          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">{photos.length}</span>
+        </div>
+
+        {photos.length > 0 ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {photos.map((photo, i) => (
-              <div key={i} className="relative group">
-                <img
-                  src={photo}
-                  alt={`Foto ${i + 1}`}
-                  className="w-full h-24 object-cover rounded-lg border border-gray-200 cursor-pointer"
-                  onClick={() => setViewingIndex(i)}
-                />
+              <div key={`${i}-${photo.slice(-24)}`} className="relative overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                 <button
-                  onClick={() => removePhoto(i)}
-                  className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  type="button"
+                  onClick={() => setViewingIndex(i)}
+                  aria-label={`Visualizar foto ${i + 1}`}
+                  className="group relative block aspect-[4/3] w-full overflow-hidden bg-gray-100"
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <img src={photo} alt={`Foto ${i + 1}`} className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" />
+                  <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-6 text-xs font-semibold text-white">
+                    <ZoomIn className="h-4 w-4" />
+                    Visualizar
+                  </span>
                 </button>
-                <div className="absolute bottom-1 left-1 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded">
-                  {i + 1}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => removePhoto(i)}
+                  disabled={processingPhotos}
+                  aria-label={`Remover foto ${i + 1}`}
+                  title="Remover foto"
+                  className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-full border border-white/80 bg-white text-red-700 shadow-md transition-colors hover:bg-red-50 disabled:opacity-50"
+                >
+                  <Trash2 className="h-5 w-5" />
+                </button>
+                <div className="px-2.5 py-2 text-xs font-medium text-gray-600">Foto {i + 1}</div>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="flex min-h-20 items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-white/70 px-4 text-sm text-gray-500">
+            <ImagePlus className="h-5 w-5" />
+            Nenhuma foto registrada
+          </div>
+        )}
+      </div>
 
       <input
         ref={fileInputRef}
@@ -148,6 +173,7 @@ export function PhotoManager({
         accept="image/*"
         multiple
         onChange={handleFileSelect}
+        disabled={processingPhotos}
         className="hidden"
       />
 

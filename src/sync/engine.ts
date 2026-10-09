@@ -47,6 +47,15 @@ function writeLocalData(data: any) {
   window.dispatchEvent(new CustomEvent('dataRefresh', { detail: { timestamp: Date.now(), source: 'sync' } }));
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error || 'Erro desconhecido');
+}
+
+async function responseError(res: Response): Promise<string> {
+  const body = await res.json().catch(() => null);
+  return body?.error || `Erro HTTP ${res.status}`;
+}
+
 /**
  * Enfileira uma mutação (criação/edição/exclusão) feita localmente. Grava no
  * outbox do IndexedDB — sobrevive a reload de página e a ficar offline por
@@ -96,10 +105,15 @@ export async function drainOutbox(): Promise<void> {
       body: JSON.stringify({ mutations: pending }),
       signal: AbortSignal.timeout(15000),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      window.dispatchEvent(new CustomEvent('backend-sync-failed', { detail: { error: await responseError(res) } }));
+      return;
+    }
 
     const { results } = await res.json();
     const local = readLocalData();
+    const failedResults = results.filter((result: any) => result.status === 'error');
+    let confirmedCount = 0;
 
     for (const result of results) {
       const mutation = pending.find((m) => m.clientOpId === result.clientOpId);
@@ -107,6 +121,7 @@ export async function drainOutbox(): Promise<void> {
       if (result.status === 'error') continue; // mantém no outbox, tenta de novo depois
 
       await offlineStorage.removeFromOutbox(result.clientOpId);
+      confirmedCount += 1;
 
       const collection = ENTITY_TO_COLLECTION[mutation.entity];
       if (!local || !collection || !Array.isArray(local[collection])) continue;
@@ -135,10 +150,16 @@ export async function drainOutbox(): Promise<void> {
     }
 
     if (local) writeLocalData(local);
-    window.dispatchEvent(new CustomEvent('backend-sync-success', { detail: { timestamp: Date.now(), count: pending.length } }));
+    if (failedResults.length > 0) {
+      window.dispatchEvent(new CustomEvent('backend-sync-failed', {
+        detail: { error: failedResults[0].error || 'O servidor recusou uma ou mais alterações', count: failedResults.length },
+      }));
+    } else {
+      window.dispatchEvent(new CustomEvent('backend-sync-success', { detail: { timestamp: Date.now(), count: confirmedCount } }));
+    }
   } catch (error) {
     // sem rede ou timeout — mutações continuam no outbox para a próxima tentativa
-    window.dispatchEvent(new CustomEvent('backend-sync-failed', { detail: { error } }));
+    window.dispatchEvent(new CustomEvent('backend-sync-failed', { detail: { error: errorMessage(error) } }));
   }
 }
 
@@ -157,15 +178,30 @@ export async function pull(): Promise<void> {
       headers: authHeaders(),
       signal: AbortSignal.timeout(15000),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      window.dispatchEvent(new CustomEvent('backend-pull-failed', { detail: { error: await responseError(res) } }));
+      return;
+    }
 
-    const { serverTime, data, deleted } = await res.json();
+    const { serverTime, data, deleted, activeIds } = await res.json();
     const local = readLocalData() || {};
+    const pendingMutations = await offlineStorage.getOutbox();
 
     for (const [entity, collection] of Object.entries(ENTITY_TO_COLLECTION)) {
       const incoming = data[entity] as any[] | undefined;
       const deletedIds = new Set(deleted[entity] as string[] | undefined);
       if (!Array.isArray(local[collection])) local[collection] = [];
+
+      const serverIds = activeIds?.[entity];
+      if (Array.isArray(serverIds)) {
+        const pendingIds = new Set(
+          pendingMutations
+            .filter((mutation) => mutation.entity === entity && mutation.op !== 'delete')
+            .map((mutation) => mutation.id)
+        );
+        const activeIdSet = new Set(serverIds);
+        local[collection] = local[collection].filter((record: any) => activeIdSet.has(record.id) || pendingIds.has(record.id));
+      }
 
       if (incoming?.length) {
         const byId = new Map(local[collection].map((r: any) => [r.id, r]));
@@ -179,8 +215,10 @@ export async function pull(): Promise<void> {
 
     writeLocalData(local);
     await offlineStorage.setSyncMeta('lastPullAt', serverTime);
-  } catch {
+    window.dispatchEvent(new CustomEvent('backend-pull-success', { detail: { timestamp: Date.now() } }));
+  } catch (error) {
     // sem rede ou timeout — mantém os dados locais como estão
+    window.dispatchEvent(new CustomEvent('backend-pull-failed', { detail: { error: errorMessage(error) } }));
   }
 }
 

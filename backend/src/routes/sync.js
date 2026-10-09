@@ -31,12 +31,14 @@ router.get('/pull', async (req, res) => {
 
     const data = {};
     const deleted = {};
+    const activeIds = {};
     for (const entity of PULL_ENTITIES) {
       data[entity] = await queries.getUpdatedSince(entity, since);
       deleted[entity] = await queries.getDeletedSince(entity, since);
+      activeIds[entity] = await queries.getActiveIds(entity);
     }
 
-    res.json({ serverTime, since, data, deleted });
+    res.json({ serverTime, since, data, deleted, activeIds });
   } catch (error) {
     console.error('❌ Erro no pull de sincronização:', error.message);
     res.status(500).json({ error: error.message });
@@ -73,7 +75,17 @@ router.post('/push', async (req, res) => {
 
         const module = PERMISSION_MODULE[m.entity];
         const action = PERMISSION_ACTION[m.op];
-        if (!role?.permissions?.[module]?.[action]) {
+        const hasPermission = role?.permissions?.[module]?.[action];
+        let canDeleteOwnPhoto = false;
+        if (m.entity === 'media' && m.op === 'delete' && req.user.role === 'tecnico') {
+          const media = await queries.getMediaById(m.id);
+          if (media?.tipo === 'foto') {
+            const inspection = await queries.getInspectionById(media.inspectionId);
+            canDeleteOwnPhoto = inspection?.tecnicoId === req.user.sub
+              && !['concluido', 'cancelado'].includes(inspection.status);
+          }
+        }
+        if (!hasPermission && !canDeleteOwnPhoto) {
           results.push({ clientOpId: m.clientOpId, status: 'error', error: 'Sem permissão para esta ação' });
           continue;
         }
