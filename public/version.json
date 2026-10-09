@@ -1,0 +1,10 @@
+{
+  "version": "2.1.20261009002",
+  "buildDate": "2026-10-09T16:59:01.917Z",
+  "features": [
+    "backend-first-sync",
+    "require-backend-mode",
+    "initial-sync-before-render"
+  ],
+  "lastUpdate": "Versão inicial do GuardCorreias"
+}
