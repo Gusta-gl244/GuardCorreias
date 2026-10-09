@@ -622,112 +622,303 @@ function generateInspectionPdf(insp: Inspection) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  let y = 18;
-  doc.setFillColor(25, 58, 42);
-  doc.rect(0, 0, pageWidth, 20, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(18);
-  doc.text('Relatório de Inspeção', 14, 13);
-  doc.setFontSize(11);
-  doc.text(insp.id, 14, 18);
+  const margin = 14;
+  const contentWidth = pageWidth - margin * 2;
+  const contentBottom = pageHeight - 18;
+  const colors = {
+    green: [25, 58, 42] as [number, number, number],
+    gold: [170, 137, 51] as [number, number, number],
+    ink: [38, 48, 42] as [number, number, number],
+    muted: [105, 116, 108] as [number, number, number],
+    line: [222, 228, 222] as [number, number, number],
+    pale: [246, 248, 245] as [number, number, number],
+  };
+  let y = 0;
 
-  doc.setTextColor(0, 0, 0);
-  y = 30;
-  doc.setFontSize(11);
-  const fields = [
-    ['Status', insp.status],
-    ['Correia', `${insp.beltTag} — ${insp.beltName}`],
-    ['Técnico', insp.tecnicoNome || '—'],
-    ['Supervisor', insp.supervisorNome || '—'],
+  function drawHeader(section: string) {
+    doc.setFillColor(...colors.green);
+    doc.rect(0, 0, pageWidth, 35, 'F');
+    doc.setFillColor(...colors.gold);
+    doc.rect(0, 35, pageWidth, 1.4, 'F');
+    doc.setTextColor(232, 218, 174);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.text('GUARD CORREIAS  /  INSPEÇÃO DE CAMPO', margin, 10);
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(17);
+    doc.text('Relatório de inspeção', margin, 21);
+    doc.setFontSize(8);
+    doc.text(`ID  ${insp.id}`, pageWidth - margin, 13, { align: 'right' });
+    doc.setTextColor(222, 232, 224);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(section.toUpperCase(), margin, 30);
+    y = 44;
+  }
+
+  function addPage(section: string) {
+    doc.addPage();
+    drawHeader(section);
+  }
+
+  function ensureSpace(height: number, section: string) {
+    if (y + height > contentBottom) addPage(`${section} - continuação`);
+  }
+
+  function drawSectionTitle(title: string) {
+    ensureSpace(13, title);
+    doc.setFillColor(...colors.gold);
+    doc.rect(margin, y, 1.3, 7, 'F');
+    doc.setTextColor(...colors.green);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(title.toUpperCase(), margin + 5, y + 5.5);
+    doc.setDrawColor(...colors.line);
+    doc.line(margin + 5, y + 9, pageWidth - margin, y + 9);
+    y += 14;
+  }
+
+  function drawInfoCard(label: string, value: string, x: number, top: number, width: number) {
+    doc.setFillColor(...colors.pale);
+    doc.setDrawColor(...colors.line);
+    doc.roundedRect(x, top, width, 21, 2, 2, 'FD');
+    doc.setTextColor(...colors.muted);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.text(label.toUpperCase(), x + 4, top + 6);
+    doc.setTextColor(...colors.ink);
+    doc.setFontSize(8.5);
+    doc.text(doc.splitTextToSize(value || '—', width - 8).slice(0, 2), x + 4, top + 12);
+  }
+
+  drawHeader('Identificação e checklist');
+  drawSectionTitle('Identificação da inspeção');
+
+  const cardGap = 4;
+  const cardWidth = (contentWidth - cardGap) / 2;
+  const statusLabels: Record<string, string> = {
+    aberto: 'Aberta',
+    'em-andamento': 'Em andamento',
+    pausado: 'Pausada',
+    concluido: 'Concluída',
+    cancelado: 'Cancelada',
+  };
+  const infoCards = [
+    ['Correia', `${insp.beltTag} - ${insp.beltName}`],
+    ['Status', statusLabels[insp.status] || insp.status],
+    ['Técnico responsável', insp.tecnicoNome],
+    ['Supervisor', insp.supervisorNome || 'Não informado'],
+    ['Ordem de manutenção', insp.omNumero || 'Não informada'],
     ['Abertura', insp.dataHoraAbertura ? new Date(insp.dataHoraAbertura).toLocaleString('pt-BR') : '—'],
-    ['Conclusão', insp.dataHoraFim ? new Date(insp.dataHoraFim).toLocaleString('pt-BR') : '—'],
-    ['OM', insp.omNumero || '—'],
+    ['Conclusão', insp.dataHoraFim ? new Date(insp.dataHoraFim).toLocaleString('pt-BR') : 'Em andamento'],
   ];
 
-  fields.forEach(([label, value]) => {
-    doc.setFont('helvetica', 'bold');
-    doc.text(String(label), 14, y);
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(value), 60, y, { maxWidth: 130 });
-    y += 7;
+  infoCards.forEach(([label, value], index) => {
+    const column = index % 2;
+    const row = Math.floor(index / 2);
+    drawInfoCard(label, value, margin + column * (cardWidth + cardGap), y + row * 24, cardWidth);
+  });
+  y += Math.ceil(infoCards.length / 2) * 24 + 2;
+
+  const resultStyles: Record<string, { label: string; color: [number, number, number]; tint: [number, number, number] }> = {
+    ok: { label: 'OK', color: [35, 112, 74], tint: [232, 244, 236] },
+    nok: { label: 'NOK', color: [171, 53, 46], tint: [250, 235, 232] },
+    co: { label: 'COM OBS.', color: [150, 110, 28], tint: [249, 243, 224] },
+    na: { label: 'N/A', color: [83, 105, 119], tint: [235, 241, 244] },
+    pending: { label: 'PENDENTE', color: [105, 116, 108], tint: [239, 241, 238] },
+  };
+  const resultCounts = { ok: 0, nok: 0, co: 0, na: 0, pending: 0 };
+  insp.checklist.forEach((item) => {
+    resultCounts[item.result || 'pending'] += 1;
   });
 
-  y += 4;
-  doc.setFont('helvetica', 'bold');
-  doc.text('Checklist', 14, y);
-  y += 7;
-  doc.setFont('helvetica', 'normal');
+  drawSectionTitle('Resumo do checklist');
+  const summaryItems = [
+    ['OK', resultCounts.ok, resultStyles.ok],
+    ['NOK', resultCounts.nok, resultStyles.nok],
+    ['COM OBS.', resultCounts.co, resultStyles.co],
+    ['N/A', resultCounts.na, resultStyles.na],
+    ['PEND.', resultCounts.pending, resultStyles.pending],
+  ] as const;
+  const summaryGap = 2;
+  const summaryWidth = (contentWidth - summaryGap * 4) / 5;
+  summaryItems.forEach(([label, count, style], index) => {
+    const x = margin + index * (summaryWidth + summaryGap);
+    doc.setFillColor(...style.tint);
+    doc.roundedRect(x, y, summaryWidth, 15, 2, 2, 'F');
+    doc.setTextColor(...style.color);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.text(label, x + summaryWidth / 2, y + 5.5, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text(String(count), x + summaryWidth / 2, y + 12, { align: 'center' });
+  });
+  y += 21;
+
+  drawSectionTitle('Itens verificados');
+  if (insp.checklist.length === 0) {
+    doc.setTextColor(...colors.muted);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text('Nenhum item de checklist registrado.', margin, y + 4);
+    y += 11;
+  }
 
   insp.checklist.forEach((item, index) => {
-    if (y > 255) {
-      doc.addPage();
-      y = 20;
-    }
+    const style = resultStyles[item.result || 'pending'];
+    const labelLines = doc.splitTextToSize(`${String(index + 1).padStart(2, '0')}  ${item.label}`, 99);
+    const observation = item.observation?.trim();
+    const observationLines = doc.splitTextToSize(observation ? `Observação: ${observation}` : 'Sem observações registradas.', contentWidth - 12);
+    const rowHeight = Math.max(15, 5 + labelLines.length * 4 + observationLines.length * 3.7 + 3);
+    ensureSpace(rowHeight + 2, 'Itens verificados');
 
-    const result = item.result ? item.result.toUpperCase() : 'PENDENTE';
-    const obs = item.observation?.trim() || '—';
-    const om = item.omNumero ? `OM: ${item.omNumero}` : 'OM: —';
-    const line = `${index + 1}. ${item.label} — ${result} | ${om}`;
-    const wrapped = doc.splitTextToSize(line, 150);
-    doc.text(wrapped, 14, y);
-    y += wrapped.length * 5;
+    doc.setFillColor(index % 2 === 0 ? 248 : 243, index % 2 === 0 ? 249 : 246, index % 2 === 0 ? 247 : 243);
+    doc.roundedRect(margin, y, contentWidth, rowHeight, 1.5, 1.5, 'F');
+    doc.setFillColor(...style.color);
+    doc.rect(margin, y, 1.2, rowHeight, 'F');
 
-    const obsWrapped = doc.splitTextToSize(`Obs.: ${obs}`, 170);
-    doc.text(obsWrapped, 18, y);
-    y += obsWrapped.length * 4.5 + 3;
+    doc.setTextColor(...colors.ink);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(labelLines, margin + 5, y + 5);
+    doc.setTextColor(...colors.muted);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    if (item.omNumero) doc.text(`OM ${item.omNumero}`, margin + 111, y + 5, { maxWidth: 34 });
+
+    const badgeWidth = 25;
+    const badgeX = pageWidth - margin - badgeWidth;
+    doc.setFillColor(...style.tint);
+    doc.roundedRect(badgeX, y + 2, badgeWidth, 7, 1.5, 1.5, 'F');
+    doc.setTextColor(...style.color);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.text(style.label, badgeX + badgeWidth / 2, y + 6.7, { align: 'center' });
+
+    doc.setTextColor(...colors.muted);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text(observationLines, margin + 5, y + 5 + labelLines.length * 4);
+    y += rowHeight + 2;
   });
 
-  const media = getStore().media.filter((m) => m.inspectionId === insp.id && m.tipo === 'foto');
-  if (media.length > 0) {
-    doc.addPage();
-    y = 18;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Fotos da inspeção', 14, y);
-    y += 10;
-    doc.setFont('helvetica', 'normal');
+  const generalObservation = insp.observacoesGerais?.trim() || 'Nenhuma observação geral registrada.';
+  const generalLines = doc.splitTextToSize(generalObservation, contentWidth - 10);
+  const generalBoxHeight = Math.max(18, generalLines.length * 4.5 + 10);
+  ensureSpace(generalBoxHeight + 14, 'Observações gerais');
+  drawSectionTitle('Observações gerais');
+  doc.setFillColor(...colors.pale);
+  doc.setDrawColor(...colors.line);
+  doc.roundedRect(margin, y, contentWidth, generalBoxHeight, 2, 2, 'FD');
+  doc.setTextColor(...colors.ink);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text(generalLines, margin + 5, y + 7);
+  y += generalBoxHeight + 6;
 
-    media.forEach((photo, index) => {
-      if (y > 210) {
-        doc.addPage();
-        y = 18;
-      }
+  ensureSpace(53, 'Validação do técnico');
+  drawSectionTitle('Validação do técnico');
+  doc.setFillColor(250, 249, 245);
+  doc.setDrawColor(...colors.line);
+  doc.roundedRect(margin, y, contentWidth, 34, 2, 2, 'FD');
+  if (insp.assinatura?.imagemBase64) {
+    try {
+      const signature = insp.assinatura.imagemBase64.startsWith('data:')
+        ? insp.assinatura.imagemBase64
+        : `data:image/png;base64,${insp.assinatura.imagemBase64}`;
+      const signatureFormat = signature.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+      doc.addImage(signature, signatureFormat, margin + 5, y + 4, 47, 19);
+    } catch {
+      doc.setTextColor(...colors.muted);
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7.5);
+      doc.text('Imagem da assinatura indisponível', margin + 5, y + 14);
+    }
+  } else {
+    doc.setDrawColor(...colors.muted);
+    doc.line(margin + 5, y + 23, margin + 52, y + 23);
+    doc.setTextColor(...colors.muted);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.5);
+    doc.text('Assinatura não registrada', margin + 5, y + 15);
+  }
+  doc.setDrawColor(...colors.line);
+  doc.line(margin + 60, y + 5, margin + 60, y + 29);
+  doc.setTextColor(...colors.muted);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.text('RESPONSÁVEL PELA INSPEÇÃO', margin + 66, y + 10);
+  doc.setTextColor(...colors.ink);
+  doc.setFontSize(10);
+  doc.text(doc.splitTextToSize(insp.assinatura?.nome || insp.tecnicoNome || 'Não informado', contentWidth - 75).slice(0, 2), margin + 66, y + 17);
+  doc.setTextColor(...colors.muted);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(insp.assinatura?.dataHora ? new Date(insp.assinatura.dataHora).toLocaleString('pt-BR') : 'Data da assinatura não registrada', margin + 66, y + 27);
+  y += 40;
+
+  const photos = getStore().media.filter((media) => media.inspectionId === insp.id && media.tipo === 'foto');
+  const photoCardWidth = (contentWidth - 6) / 2;
+  const photoCardHeight = 78;
+  const photoRowGap = 5;
+  for (let batchStart = 0; batchStart < photos.length; batchStart += 4) {
+    const batch = photos.slice(batchStart, batchStart + 4);
+    const pageNumber = Math.floor(batchStart / 4) + 1;
+    addPage(`Registro fotográfico ${String(pageNumber).padStart(2, '0')}`);
+    drawSectionTitle('Evidências fotográficas');
+
+    batch.forEach((photo, batchIndex) => {
+      const column = batchIndex % 2;
+      const row = Math.floor(batchIndex / 2);
+      const x = margin + column * (photoCardWidth + 6);
+      const top = y + row * (photoCardHeight + photoRowGap);
+      doc.setFillColor(249, 250, 248);
+      doc.setDrawColor(...colors.line);
+      doc.roundedRect(x, top, photoCardWidth, photoCardHeight, 2, 2, 'FD');
 
       try {
-        const imgData = photo.dataBase64.startsWith('data:') ? photo.dataBase64 : `data:${photo.mimeType};base64,${photo.dataBase64}`;
-        const imgWidth = 70;
-        const imgHeight = 50;
-        doc.addImage(imgData, 'JPEG', 14, y, imgWidth, imgHeight);
-        doc.text(photo.filename || `Foto ${index + 1}`, 90, y + 8);
-        y += 58;
+        const imageData = photo.dataBase64.startsWith('data:')
+          ? photo.dataBase64
+          : `data:${photo.mimeType || 'image/jpeg'};base64,${photo.dataBase64}`;
+        const imageFormat = photo.mimeType?.toLowerCase().includes('png') || imageData.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+        const properties = doc.getImageProperties(imageData);
+        const maxWidth = photoCardWidth - 10;
+        const maxHeight = 48;
+        const scale = Math.min(maxWidth / properties.width, maxHeight / properties.height);
+        const imageWidth = properties.width * scale;
+        const imageHeight = properties.height * scale;
+        doc.addImage(imageData, imageFormat, x + (photoCardWidth - imageWidth) / 2, top + 4 + (maxHeight - imageHeight) / 2, imageWidth, imageHeight);
       } catch {
-        doc.text(`Foto ${index + 1}: não foi possível incluir a imagem.`, 14, y);
-        y += 8;
+        doc.setTextColor(...colors.muted);
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(8);
+        doc.text('Imagem indisponível', x + photoCardWidth / 2, top + 29, { align: 'center' });
       }
+
+      doc.setDrawColor(...colors.line);
+      doc.line(x + 5, top + 55, x + photoCardWidth - 5, top + 55);
+      doc.setTextColor(...colors.ink);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.text(doc.splitTextToSize(photo.filename || `Foto ${batchStart + batchIndex + 1}`, photoCardWidth - 10).slice(0, 2), x + 5, top + 61);
+      doc.setTextColor(...colors.muted);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.text(photo.capturedAt ? new Date(photo.capturedAt).toLocaleString('pt-BR') : 'Data não registrada', x + 5, top + 73);
     });
   }
 
-  doc.addPage();
-  y = 18;
-  doc.setFont('helvetica', 'bold');
-  doc.text('Observações gerais', 14, y);
-  y += 8;
-  doc.setFont('helvetica', 'normal');
-  const generalObs = doc.splitTextToSize(insp.observacoesGerais?.trim() || 'Nenhuma observação geral registrada.', 170);
-  doc.text(generalObs, 14, y);
-  y += generalObs.length * 5 + 12;
-
-  if (insp.assinatura?.imagemBase64) {
-    try {
-      const sig = insp.assinatura.imagemBase64.startsWith('data:') ? insp.assinatura.imagemBase64 : `data:image/png;base64,${insp.assinatura.imagemBase64}`;
-      doc.addImage(sig, 'PNG', 135, y, 55, 20);
-    } catch {
-      // ignora se assinatura não puder ser renderizada
-    }
+  const totalPages = doc.getNumberOfPages();
+  for (let page = 1; page <= totalPages; page += 1) {
+    doc.setPage(page);
+    doc.setDrawColor(...colors.line);
+    doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
+    doc.setTextColor(...colors.muted);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text(`Emitido em ${new Date().toLocaleDateString('pt-BR')}`, margin, pageHeight - 6);
+    doc.text(`Página ${page} de ${totalPages}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
   }
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Assinatura do técnico', 135, y + 25);
-  doc.text(insp.assinatura?.nome || 'Sem assinatura registrada', 135, y + 32);
 
   doc.save(`${insp.id}-relatorio.pdf`);
 }
