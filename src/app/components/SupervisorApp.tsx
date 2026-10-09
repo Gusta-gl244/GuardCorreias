@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { jsPDF } from 'jspdf';
 import {
   LogOut,
   RefreshCw,
@@ -11,6 +12,7 @@ import {
   X,
   FileText,
   Download,
+  Image as ImageIcon,
 } from 'lucide-react';
 import guardCorreiasIcon from '../../assets/brand/guardcorreias-logo.png';
 import grupoLogo from '../../assets/brand/grupo-mvv-bnmc.png';
@@ -41,7 +43,7 @@ interface SupervisorAppProps {
   onLogout: () => void;
 }
 
-type Tab = 'visao-geral' | 'correias' | 'ordens' | 'relatorios';
+type Tab = 'visao-geral' | 'correias' | 'ordens' | 'registros' | 'relatorios';
 
 export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
   const [activeTab, setActiveTab] = useState<Tab>('visao-geral');
@@ -102,7 +104,8 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
             { id: 'visao-geral', label: 'Visão Geral', icon: LayoutDashboard },
             { id: 'correias', label: 'Correias', icon: Layers },
             { id: 'ordens', label: 'Ordens de Inspeção', icon: ClipboardList },
-            { id: 'relatorios', label: 'Relatórios', icon: FileText },
+            { id: 'registros', label: 'Registros', icon: FileText },
+            { id: 'relatorios', label: 'Relatórios', icon: Download },
           ] as const).map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -179,6 +182,10 @@ export function SupervisorApp({ user, onLogout }: SupervisorAppProps) {
 
         {activeTab === 'ordens' && (
           <OrdersPanel orders={orders} belts={belts} technicians={technicians} onRefresh={refresh} />
+        )}
+
+        {activeTab === 'registros' && (
+          <RecordsPanel inspections={inspections} orders={orders} belts={belts} technicians={technicians} />
         )}
 
         {activeTab === 'relatorios' && (
@@ -600,6 +607,322 @@ function OrdersPanel({
         })}
         {orders.length === 0 && !showForm && (
           <Card className="p-8 text-center text-sm text-gray-400">Nenhuma ordem de inspeção criada ainda.</Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registros
+// ─────────────────────────────────────────────────────────────────────────────
+
+function generateInspectionPdf(insp: Inspection) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  let y = 18;
+  doc.setFillColor(25, 58, 42);
+  doc.rect(0, 0, pageWidth, 20, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(18);
+  doc.text('Relatório de Inspeção', 14, 13);
+  doc.setFontSize(11);
+  doc.text(insp.id, 14, 18);
+
+  doc.setTextColor(0, 0, 0);
+  y = 30;
+  doc.setFontSize(11);
+  const fields = [
+    ['Status', insp.status],
+    ['Correia', `${insp.beltTag} — ${insp.beltName}`],
+    ['Técnico', insp.tecnicoNome || '—'],
+    ['Supervisor', insp.supervisorNome || '—'],
+    ['Abertura', insp.dataHoraAbertura ? new Date(insp.dataHoraAbertura).toLocaleString('pt-BR') : '—'],
+    ['Conclusão', insp.dataHoraFim ? new Date(insp.dataHoraFim).toLocaleString('pt-BR') : '—'],
+    ['OM', insp.omNumero || '—'],
+  ];
+
+  fields.forEach(([label, value]) => {
+    doc.setFont('helvetica', 'bold');
+    doc.text(String(label), 14, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(value), 60, y, { maxWidth: 130 });
+    y += 7;
+  });
+
+  y += 4;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Checklist', 14, y);
+  y += 7;
+  doc.setFont('helvetica', 'normal');
+
+  insp.checklist.forEach((item, index) => {
+    if (y > 255) {
+      doc.addPage();
+      y = 20;
+    }
+
+    const result = item.result ? item.result.toUpperCase() : 'PENDENTE';
+    const obs = item.observation?.trim() || '—';
+    const om = item.omNumero ? `OM: ${item.omNumero}` : 'OM: —';
+    const line = `${index + 1}. ${item.label} — ${result} | ${om}`;
+    const wrapped = doc.splitTextToSize(line, 150);
+    doc.text(wrapped, 14, y);
+    y += wrapped.length * 5;
+
+    const obsWrapped = doc.splitTextToSize(`Obs.: ${obs}`, 170);
+    doc.text(obsWrapped, 18, y);
+    y += obsWrapped.length * 4.5 + 3;
+  });
+
+  const media = getStore().media.filter((m) => m.inspectionId === insp.id && m.tipo === 'foto');
+  if (media.length > 0) {
+    doc.addPage();
+    y = 18;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Fotos da inspeção', 14, y);
+    y += 10;
+    doc.setFont('helvetica', 'normal');
+
+    media.forEach((photo, index) => {
+      if (y > 210) {
+        doc.addPage();
+        y = 18;
+      }
+
+      try {
+        const imgData = photo.dataBase64.startsWith('data:') ? photo.dataBase64 : `data:${photo.mimeType};base64,${photo.dataBase64}`;
+        const imgWidth = 70;
+        const imgHeight = 50;
+        doc.addImage(imgData, 'JPEG', 14, y, imgWidth, imgHeight);
+        doc.text(photo.filename || `Foto ${index + 1}`, 90, y + 8);
+        y += 58;
+      } catch {
+        doc.text(`Foto ${index + 1}: não foi possível incluir a imagem.`, 14, y);
+        y += 8;
+      }
+    });
+  }
+
+  doc.addPage();
+  y = 18;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Observações gerais', 14, y);
+  y += 8;
+  doc.setFont('helvetica', 'normal');
+  const generalObs = doc.splitTextToSize(insp.observacoesGerais?.trim() || 'Nenhuma observação geral registrada.', 170);
+  doc.text(generalObs, 14, y);
+  y += generalObs.length * 5 + 12;
+
+  if (insp.assinatura?.imagemBase64) {
+    try {
+      const sig = insp.assinatura.imagemBase64.startsWith('data:') ? insp.assinatura.imagemBase64 : `data:image/png;base64,${insp.assinatura.imagemBase64}`;
+      doc.addImage(sig, 'PNG', 135, y, 55, 20);
+    } catch {
+      // ignora se assinatura não puder ser renderizada
+    }
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('Assinatura do técnico', 135, y + 25);
+  doc.text(insp.assinatura?.nome || 'Sem assinatura registrada', 135, y + 32);
+
+  doc.save(`${insp.id}-relatorio.pdf`);
+}
+
+function RecordsPanel({ inspections, orders, belts, technicians }: { inspections: Inspection[]; orders: InspectionOrder[]; belts: Belt[]; technicians: { id: string; name: string }[] }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const orderedRecords = useMemo(() => {
+    return [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [orders]);
+
+  const selectedOrder = useMemo(() => {
+    return orderedRecords.find((o) => o.id === selectedId) ?? orderedRecords[0] ?? null;
+  }, [orderedRecords, selectedId]);
+
+  const selectedInspection = useMemo(() => {
+    if (!selectedOrder) return null;
+    return inspections.find((i) => i.id === selectedOrder.inspectionId) ?? inspections.find((i) => i.orderId === selectedOrder.id) ?? null;
+  }, [inspections, selectedOrder]);
+
+  useEffect(() => {
+    if (!selectedId && orderedRecords[0]) setSelectedId(orderedRecords[0].id);
+  }, [orderedRecords, selectedId]);
+
+  const selectedMedia = selectedInspection ? getStore().media.filter((m) => m.inspectionId === selectedInspection.id) : [];
+
+  async function handleDownloadReport(insp: Inspection) {
+    setDownloadingId(insp.id);
+    try {
+      const blob = await inspectionsAPI.exportZip(insp.id);
+      downloadBlob(blob, `${insp.id}.zip`);
+    } catch {
+      alert('Falha ao exportar o relatório desta inspeção.');
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
+  return (
+    <div className="max-w-6xl mx-auto grid gap-4 lg:grid-cols-[360px_1fr]">
+      <div className="rounded-2xl bg-white border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-200 bg-[#193A2A] text-white text-sm font-medium">
+          Registros de inspeção
+        </div>
+        <div className="divide-y divide-gray-200 max-h-[70vh] overflow-auto">
+          {orderedRecords.length === 0 && (
+            <div className="p-6 text-sm text-gray-500">Nenhuma ordem de inspeção ainda.</div>
+          )}
+          {orderedRecords.map((order) => {
+            const belt = belts.find((b) => b.id === order.beltId);
+            const tech = technicians.find((t) => t.id === order.technicianId);
+            const inspection = inspections.find((i) => i.id === order.inspectionId) ?? inspections.find((i) => i.orderId === order.id);
+            const active = selectedOrder?.id === order.id;
+            return (
+              <button
+                key={order.id}
+                onClick={() => setSelectedId(order.id)}
+                className={`w-full text-left p-3.5 transition ${active ? 'bg-[#f5f0df]' : 'bg-white hover:bg-gray-50'}`}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-xs font-semibold text-[#193A2A]">{order.id}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{order.status}</span>
+                </div>
+                <div className="text-sm text-gray-800">{belt ? `${belt.tag} — ${belt.name}` : 'Correia sem vínculo'}</div>
+                <div className="text-[11px] text-gray-500 mt-1">{tech?.name || order.technicianId} · {inspection ? inspection.status : 'sem inspeção'}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-white border border-gray-200 shadow-sm p-4">
+        {!selectedOrder || !selectedInspection ? (
+          <div className="text-sm text-gray-500">Selecione uma ordem para visualizar o registro, fotos e relatórios.</div>
+        ) : (
+          <div className="space-y-5">
+            <div className="flex flex-col gap-3 border-b border-gray-200 pb-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500">ID da ordem</div>
+                  <div className="text-xl font-semibold text-[#193A2A]">{selectedOrder.id}</div>
+                </div>
+                <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#193A2A] text-white">{selectedOrder.status}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="text-xs px-3 py-2 rounded-lg border border-[#193A2A] text-[#193A2A] bg-white"
+                  onClick={() => handleDownloadReport(selectedInspection)}
+                  disabled={downloadingId === selectedInspection.id}
+                >
+                  <Download className="w-3.5 h-3.5 inline-block mr-1" />
+                  {downloadingId === selectedInspection.id ? 'Baixando...' : 'Baixar relatório (.zip)'}
+                </button>
+                <button
+                  className="text-xs px-3 py-2 rounded-lg bg-[#AA8933] text-white"
+                  onClick={() => generateInspectionPdf(selectedInspection)}
+                >
+                  <FileText className="w-3.5 h-3.5 inline-block mr-1" />
+                  Gerar PDF
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="bg-gray-50 rounded-xl p-3">
+                <div className="text-[10px] uppercase text-gray-500">Correia</div>
+                <div className="text-sm font-medium text-[#193A2A]">{selectedInspection.beltTag} — {selectedInspection.beltName}</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3">
+                <div className="text-[10px] uppercase text-gray-500">Técnico</div>
+                <div className="text-sm font-medium text-[#193A2A]">{selectedInspection.tecnicoNome}</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3">
+                <div className="text-[10px] uppercase text-gray-500">Supervisor</div>
+                <div className="text-sm font-medium text-[#193A2A]">{selectedInspection.supervisorNome || '—'}</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3">
+                <div className="text-[10px] uppercase text-gray-500">OM</div>
+                <div className="text-sm font-medium text-[#193A2A]">{selectedInspection.omNumero || '—'}</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3">
+                <div className="text-[10px] uppercase text-gray-500">Abertura</div>
+                <div className="text-sm font-medium text-[#193A2A]">{new Date(selectedInspection.dataHoraAbertura).toLocaleString('pt-BR')}</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3">
+                <div className="text-[10px] uppercase text-gray-500">Conclusão</div>
+                <div className="text-sm font-medium text-[#193A2A]">{selectedInspection.dataHoraFim ? new Date(selectedInspection.dataHoraFim).toLocaleString('pt-BR') : 'Ainda em andamento'}</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-2">Checklist e resultado</div>
+              <div className="overflow-hidden rounded-xl border border-gray-200">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 font-medium text-gray-700">Item</th>
+                      <th className="px-3 py-2 font-medium text-gray-700">Resultado</th>
+                      <th className="px-3 py-2 font-medium text-gray-700">OM</th>
+                      <th className="px-3 py-2 font-medium text-gray-700">Observação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedInspection.checklist.map((item, idx) => (
+                      <tr key={`${item.itemId}-${idx}`} className="border-t border-gray-200 align-top">
+                        <td className="px-3 py-2">{idx + 1}. {item.label}</td>
+                        <td className="px-3 py-2 uppercase">{item.result || 'Pendente'}</td>
+                        <td className="px-3 py-2">{item.omNumero || '—'}</td>
+                        <td className="px-3 py-2 text-gray-700">{item.observation || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[11px] uppercase tracking-wide text-gray-500">Observações gerais</div>
+              <div className="rounded-xl bg-gray-50 p-3 text-sm text-gray-700 whitespace-pre-wrap">
+                {selectedInspection.observacoesGerais || 'Nenhuma observação geral registrada.'}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-gray-500">
+                <ImageIcon className="w-3.5 h-3.5" />
+                Fotos da ordem
+              </div>
+              {selectedMedia.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500">Nenhuma foto anexada nesta inspeção.</div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {selectedMedia.map((media) => (
+                    <div key={media.id} className="rounded-xl border border-gray-200 overflow-hidden bg-gray-50">
+                      <img src={media.dataBase64} alt={media.filename} className="w-full h-40 object-cover" />
+                      <div className="px-2.5 py-2 text-[11px] text-gray-600 truncate">{media.filename}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-gray-200 p-3 bg-[#f9f7f2]">
+              <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-2">Assinatura registrada</div>
+              {selectedInspection.assinatura?.imagemBase64 ? (
+                <div className="space-y-2">
+                  <img src={selectedInspection.assinatura.imagemBase64} alt="Assinatura do técnico" className="max-h-24 w-auto border border-gray-200 bg-white rounded" />
+                  <div className="text-sm text-[#193A2A] font-medium">{selectedInspection.assinatura.nome}</div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500">Sem assinatura registrada para esta inspeção.</div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>

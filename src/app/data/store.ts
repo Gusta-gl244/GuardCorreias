@@ -348,11 +348,11 @@ export function getInspectionOrderById(id: string): InspectionOrder | undefined 
   return getStore().inspectionOrders.find((o) => o.id === id);
 }
 
-function syncOrder(order: InspectionOrder) {
-  enqueueMutation('inspectionOrders', 'update', order.id, order);
+async function syncOrder(order: InspectionOrder) {
+  await enqueueMutation('inspectionOrders', 'update', order.id, order);
 }
-function syncInspection(insp: Inspection) {
-  enqueueMutation('inspections', 'update', insp.id, insp);
+async function syncInspection(insp: Inspection) {
+  await enqueueMutation('inspections', 'update', insp.id, insp);
 }
 
 export function addInspectionOrder(order: InspectionOrder): void {
@@ -458,7 +458,7 @@ export function pauseOrder(orderId: string, userId: string, userName: string, mo
   return order;
 }
 
-export function completeOrder(orderId: string, userId: string, userName: string): InspectionOrder | null {
+export async function completeOrder(orderId: string, userId: string, userName: string): Promise<InspectionOrder | null> {
   const store = getStore();
   const order = store.inspectionOrders.find((o) => o.id === orderId);
   if (!order) return null;
@@ -473,7 +473,7 @@ export function completeOrder(orderId: string, userId: string, userName: string)
   if (insp) {
     insp.status = 'concluido';
     insp.dataHoraFim = now;
-    syncInspection(insp);
+    await syncInspection(insp);
 
     const belt = store.belts.find((b) => b.id === order.beltId);
     if (belt) {
@@ -484,35 +484,35 @@ export function completeOrder(orderId: string, userId: string, userName: string)
       const hasCo = insp.checklist.some((c) => c.result === 'co');
       belt.healthStatus = hasNok ? 'critico' : hasCo ? 'atencao' : 'saudavel';
       belt.critica = hasNok;
-      enqueueMutation('belts', 'update', belt.id, belt);
+      await enqueueMutation('belts', 'update', belt.id, belt);
     }
   }
 
   addSystemLog({ level: 'success', module: 'Ordens', message: `Ordem ${orderId} concluída por ${userName}` });
   saveStore(store);
-  syncOrder(order);
+  await syncOrder(order);
   return order;
 }
 
 /** Salva o progresso do checklist (chamado a cada resposta, para nunca
  * perder trabalho em caso de fechamento inesperado do app). */
-export function saveInspectionProgress(inspectionId: string, checklist: ChecklistAnswer[], observacoesGerais?: string): void {
+export async function saveInspectionProgress(inspectionId: string, checklist: ChecklistAnswer[], observacoesGerais?: string): Promise<void> {
   const store = getStore();
   const insp = store.inspections.find((i) => i.id === inspectionId);
   if (!insp) return;
   insp.checklist = checklist;
   if (observacoesGerais !== undefined) insp.observacoesGerais = observacoesGerais;
   saveStore(store);
-  syncInspection(insp);
+  await syncInspection(insp);
 }
 
-export function signInspection(inspectionId: string, nome: string, imagemBase64?: string): void {
+export async function signInspection(inspectionId: string, nome: string, imagemBase64?: string): Promise<void> {
   const store = getStore();
   const insp = store.inspections.find((i) => i.id === inspectionId);
   if (!insp) return;
   insp.assinatura = { nome, dataHora: new Date().toISOString(), imagemBase64 };
   saveStore(store);
-  syncInspection(insp);
+  await syncInspection(insp);
 }
 
 export function getInspections(): Inspection[] {

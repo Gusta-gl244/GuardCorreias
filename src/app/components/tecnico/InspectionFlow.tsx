@@ -27,6 +27,7 @@ import { Input } from '../ui/input';
 import { PhotoManager } from '@/components/PhotoManager';
 import { SignaturePad } from '@/components/SignaturePad';
 import { useGeolocation } from '@/hooks/useGeolocation';
+import { runSyncCycle } from '@/sync/engine';
 import type { User } from '../../App';
 
 interface InspectionFlowProps {
@@ -204,10 +205,14 @@ export function InspectionFlow({ order, user, onBack, onComplete, onPause }: Ins
   async function handleFinalConfirm() {
     if (!user.name) return;
     setSigning(true);
-    signInspection(insp.id, user.name, signatureImg ?? undefined);
-    completeOrder(order.id, user.id, user.name);
-    setSigning(false);
-    onComplete();
+    try {
+      await signInspection(insp.id, user.name, signatureImg ?? undefined);
+      await completeOrder(order.id, user.id, user.name);
+      await runSyncCycle();
+      onComplete();
+    } finally {
+      setSigning(false);
+    }
   }
 
   const nokItems = checklist.filter((c) => c.result === 'nok');
